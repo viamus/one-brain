@@ -70,6 +70,28 @@ services:
       timeout: 5s
       retries: 5
 
+  mcp-http:
+    build: .
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      ONEBRAIN_API_URL: http://api:8080
+      ONEBRAIN_MCP_HOST: 0.0.0.0
+      ONEBRAIN_MCP_PORT: 8090
+      ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
+    ports:
+      - "${ONEBRAIN_MCP_PORT:-8090}:8090"
+    command: ["onebrain-mcp-http"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   qdrant_storage:

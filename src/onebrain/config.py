@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     api_keys: str = ""
     api_url: str = "http://localhost:8080"
     api_key: str = ""
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8090
+    mcp_require_api_key: bool = True
 
     database_url: str = "postgresql+asyncpg://onebrain:onebrain@localhost:5432/onebrain"
 
@@ -53,6 +56,8 @@ class Settings(BaseSettings):
             raise ValueError("ONEBRAIN_API_KEYS is required in production")
         if self.vector_size <= 0:
             raise ValueError("ONEBRAIN_VECTOR_SIZE must be positive")
+        if self.mcp_port <= 0:
+            raise ValueError("ONEBRAIN_MCP_PORT must be positive")
         return self
 
 

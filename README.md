@@ -77,6 +77,7 @@ This starts:
 - `qdrant`
 - `migrate`, which runs `alembic upgrade head`
 - `api`, the OneBrain HTTP service
+- `mcp-http`, the OneBrain streamable HTTP MCP service
 
 Check status:
 
@@ -118,6 +119,7 @@ docker compose down -v
 | `qdrant` | Vector database for semantic recall |
 | `migrate` | One-shot Alembic migration runner |
 | `api` | OneBrain FastAPI HTTP service |
+| `mcp-http` | Streamable HTTP MCP service protected by API key |
 
 The Compose file overrides container network URLs automatically:
 
@@ -138,6 +140,8 @@ ONEBRAIN_API_KEYS=
 ONEBRAIN_API_URL=http://localhost:8080
 ONEBRAIN_API_KEY=
 ONEBRAIN_HTTP_PORT=8080
+ONEBRAIN_MCP_PORT=8090
+ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
 POSTGRES_DB=onebrain
 POSTGRES_USER=onebrain
@@ -284,26 +288,50 @@ Invoke-RestMethod http://localhost:8080/v1/context `
 
 ## MCP Usage
 
-The MCP server is a thin stdio adapter over the HTTP API. Start the Docker stack first:
+OneBrain supports two MCP modes:
+
+- **HTTP MCP**, recommended for Codex once Docker is running.
+- **stdio MCP**, useful for local development.
+
+Both modes are thin adapters over the HTTP API. They do not connect to PostgreSQL or Qdrant directly.
+
+### HTTP MCP
+
+Start the Docker stack:
 
 ```powershell
 docker compose up -d --build
 ```
 
-Then configure the MCP client settings in `.env`:
+Make sure `.env` has:
 
 ```env
-ONEBRAIN_API_URL=http://localhost:8080
+ONEBRAIN_API_KEYS=dev-key-1
 ONEBRAIN_API_KEY=dev-key-1
+ONEBRAIN_MCP_PORT=8090
+ONEBRAIN_MCP_REQUIRE_API_KEY=true
 ```
 
-If your host port is different, such as `ONEBRAIN_HTTP_PORT=8088`, set:
+The MCP HTTP endpoint is:
 
-```env
-ONEBRAIN_API_URL=http://localhost:8088
+```text
+http://localhost:8090/mcp
 ```
 
-For local Codex usage, run the MCP server from the host so stdio works naturally:
+Recommended Codex config:
+
+```toml
+[mcp_servers.onebrain]
+type = "http"
+url = "http://localhost:8090/mcp"
+bearer_token_env_var = "ONEBRAIN_API_KEY"
+```
+
+Set `ONEBRAIN_API_KEY` in your user environment so Codex can send it as a bearer token.
+
+### Stdio MCP
+
+For local stdio usage, run the MCP server from the host:
 
 ```powershell
 uv sync --dev

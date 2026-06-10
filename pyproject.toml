@@ -44,6 +44,7 @@ dev = [
 [project.scripts]
 onebrain-api = "onebrain.api:run"
 onebrain-mcp = "onebrain.mcp_server:run"
+onebrain-mcp-http = "onebrain.mcp_server:run_http"
 
 [build-system]
 requires = ["hatchling"]
