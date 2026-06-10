@@ -38,6 +38,7 @@ uv run pytest -q
 - Keep OneBrain's online path deterministic. Do not add LLM calls to context composition or retrieval.
 - Keep PostgreSQL as the canonical source of truth.
 - Keep Qdrant as an index, not the only source of memory data.
+- Keep the MCP stdio server as a thin HTTP API adapter. It should not connect to PostgreSQL or Qdrant directly.
 - Add migrations for schema changes.
 - Keep authentication and secret handling explicit.
 - Do not commit `.env`, credentials, generated caches, or local database files.

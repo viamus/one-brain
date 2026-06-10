@@ -32,7 +32,8 @@ Core responsibilities:
 
 - **PostgreSQL**: source of truth for memories, entities, relations, audit events, metadata, and validity windows.
 - **Qdrant**: vector index for recall and similarity search.
-- **OneBrain API/MCP**: capture, search, correlate, explain retrieval reasons, and compose context.
+- **OneBrain HTTP API**: capture, search, correlate, explain retrieval reasons, and compose context.
+- **OneBrain MCP**: stdio adapter that calls the HTTP API. It does not connect to PostgreSQL or Qdrant directly.
 - **Calling LLM**: reasoning, interpretation, conflict analysis, and task-specific decisions.
 
 ## Repository Layout
@@ -134,6 +135,8 @@ Important settings:
 ```env
 ONEBRAIN_ENVIRONMENT=local
 ONEBRAIN_API_KEYS=
+ONEBRAIN_API_URL=http://localhost:8080
+ONEBRAIN_API_KEY=
 ONEBRAIN_HTTP_PORT=8080
 
 POSTGRES_DB=onebrain
@@ -205,6 +208,13 @@ Production recommendation:
 - Do not store secrets as memories.
 - Use different API keys for humans, automation, and agents when possible.
 
+`ONEBRAIN_API_KEY` is different from `ONEBRAIN_API_KEYS`:
+
+- `ONEBRAIN_API_KEYS`: comma-separated keys accepted by the HTTP API server.
+- `ONEBRAIN_API_KEY`: single key used by local clients such as the MCP stdio adapter when they call the HTTP API.
+
+If `ONEBRAIN_API_KEY` is empty, the MCP adapter uses the first value from `ONEBRAIN_API_KEYS`.
+
 ## HTTP API Examples
 
 If auth is enabled:
@@ -274,6 +284,25 @@ Invoke-RestMethod http://localhost:8080/v1/context `
 
 ## MCP Usage
 
+The MCP server is a thin stdio adapter over the HTTP API. Start the Docker stack first:
+
+```powershell
+docker compose up -d --build
+```
+
+Then configure the MCP client settings in `.env`:
+
+```env
+ONEBRAIN_API_URL=http://localhost:8080
+ONEBRAIN_API_KEY=dev-key-1
+```
+
+If your host port is different, such as `ONEBRAIN_HTTP_PORT=8088`, set:
+
+```env
+ONEBRAIN_API_URL=http://localhost:8088
+```
+
 For local Codex usage, run the MCP server from the host so stdio works naturally:
 
 ```powershell
@@ -291,6 +320,8 @@ cwd = "C:\\Repositories\\one-brain"
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 ```
+
+Because the MCP process starts with `cwd = "C:\\Repositories\\one-brain"`, it reads `.env` from this repository. That keeps API keys out of Codex config.
 
 Available MCP tools:
 
