@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import io
 from pathlib import Path
 
 import pytest
@@ -9,12 +11,17 @@ from onebrain_cli.local_importer import (
     CodexCliContextualizer,
     CodexCliOptions,
     KnowledgeContext,
+    KnowledgeContextRequest,
     KnowledgeEntityContext,
     LocalImportOptions,
+    ProgressReporter,
+    _context_batch_prompt,
     _context_prompt,
+    _knowledge_context_batch_schema,
     _knowledge_context_schema,
     _load_scope,
     _parse_knowledge_context,
+    _parse_knowledge_context_batch,
     _resolve_docs_path,
     run_local_import,
 )
@@ -33,6 +40,7 @@ class FakeApiClient:
         self.local_path = local_path
         self.analyze_request: IngestionAnalyzeRequest | None = None
         self.commit_request: IngestionCommitRequest | None = None
+        self.commit_requests: list[IngestionCommitRequest] = []
 
     async def analyze(self, request: IngestionAnalyzeRequest):
         self.analyze_request = request
@@ -41,11 +49,19 @@ class FakeApiClient:
 
     async def commit(self, request: IngestionCommitRequest) -> IngestionCommitResult:
         self.commit_request = request
+        self.commit_requests.append(request)
+        created_ids = (
+            [] if request.dry_run else [f"memory-{item.id}" for item in request.plan.items]
+        )
         return IngestionCommitResult(
             dry_run=request.dry_run,
             documents=len(request.plan.documents),
             items=len(request.plan.items),
             created=0 if request.dry_run else len(request.plan.items),
+            created_ids=created_ids,
+            memory_id_by_item_id={
+                item.id: f"memory-{item.id}" for item in request.plan.items if not request.dry_run
+            },
         )
 
 
@@ -91,6 +107,75 @@ class FakeContextualizer:
         )
 
 
+class FakeBatchContextualizer:
+    name = "codex-cli"
+    batch_size = 10
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def contextualize_batch(
+        self,
+        *,
+        root_path: Path,
+        requests: list[KnowledgeContextRequest],
+        redact_secrets: bool,
+    ) -> dict[str, KnowledgeContext]:
+        assert root_path
+        assert redact_secrets is True
+        self.calls.append([request.document.relative_path for request in requests])
+        return {
+            request.document.id: KnowledgeContext(
+                title=f"Knowledge: {request.document.title}",
+                summary=f"Learned knowledge from {request.document.title}.",
+                purpose="Preserve learned knowledge from source evidence.",
+                domain="engineering knowledge",
+                category="technical knowledge",
+                key_topics=[request.document.title],
+                important_sections=[item.title for item in request.child_items],
+                entities=[
+                    KnowledgeEntityContext(
+                        name=request.document.title,
+                        entity_type="concept",
+                        summary="Concept learned from source evidence.",
+                    )
+                ],
+                tags=["batch"],
+                confidence=0.9,
+            )
+            for request in requests
+        }
+
+
+class SlowParallelBatchContextualizer(FakeBatchContextualizer):
+    batch_size = 1
+    max_workers = 2
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.max_active = 0
+
+    async def contextualize_batch(
+        self,
+        *,
+        root_path: Path,
+        requests: list[KnowledgeContextRequest],
+        redact_secrets: bool,
+    ) -> dict[str, KnowledgeContext]:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.01)
+            return await super().contextualize_batch(
+                root_path=root_path,
+                requests=requests,
+                redact_secrets=redact_secrets,
+            )
+        finally:
+            self.active -= 1
+
+
 @pytest.mark.asyncio
 async def test_local_import_enriches_ingestion_plan_before_api_commit(tmp_path) -> None:
     source = tmp_path / "catalog" / "release.md"
@@ -110,6 +195,7 @@ async def test_local_import_enriches_ingestion_plan_before_api_commit(tmp_path) 
             api_path="/mnt/catalog",
             scope={"project": "one-brain"},
             source_ref_prefix="catalog://test",
+            include_evidence_items=True,
         ),
         api_client=api_client,
         contextualizer=contextualizer,
@@ -146,6 +232,115 @@ async def test_local_import_enriches_ingestion_plan_before_api_commit(tmp_path) 
         "Build Gates",
         "Deployment",
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_import_uses_batch_contextualizer_for_multiple_docs(tmp_path) -> None:
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("# First\n\nKnowledge one.\n\n## Detail\n\nAlpha.", encoding="utf-8")
+    second.write_text("# Second\n\nKnowledge two.\n\n## Detail\n\nBeta.", encoding="utf-8")
+    api_client = FakeApiClient(tmp_path)
+    contextualizer = FakeBatchContextualizer()
+
+    result = await run_local_import(
+        LocalImportOptions(path=tmp_path, source_ref_prefix="catalog://batch"),
+        api_client=api_client,
+        contextualizer=contextualizer,
+    )
+
+    assert len(contextualizer.calls) == 1
+    assert sorted(contextualizer.calls[0]) == ["first.md", "second.md"]
+    assert result.plan.stats["contextualized_documents"] == 2
+    assert result.plan.stats["fallback_contextualizations"] == 0
+
+
+@pytest.mark.asyncio
+async def test_local_import_omits_evidence_items_by_default(tmp_path) -> None:
+    source = tmp_path / "guide.md"
+    source.write_text("# Guide\n\nKnowledge.\n\n## Detail\n\nEvidence.", encoding="utf-8")
+
+    result = await run_local_import(
+        LocalImportOptions(path=tmp_path),
+        api_client=FakeApiClient(tmp_path),
+        contextualizer=FakeBatchContextualizer(),
+    )
+
+    assert {item.item_type for item in result.plan.items} == {"document"}
+    assert result.plan.stats["evidence_items_included"] is False
+    assert result.plan.stats["omitted_evidence_items"] > 0
+
+
+@pytest.mark.asyncio
+async def test_local_import_runs_codex_batches_with_worker_parallelism(tmp_path) -> None:
+    for name in ("first", "second", "third"):
+        (tmp_path / f"{name}.md").write_text(
+            f"# {name.title()}\n\nKnowledge for {name}.\n\n## Detail\n\nEvidence.",
+            encoding="utf-8",
+        )
+    contextualizer = SlowParallelBatchContextualizer()
+
+    result = await run_local_import(
+        LocalImportOptions(path=tmp_path),
+        api_client=FakeApiClient(tmp_path),
+        contextualizer=contextualizer,
+    )
+
+    assert contextualizer.max_active == 2
+    assert len(contextualizer.calls) == 3
+    assert result.plan.stats["contextualized_documents"] == 3
+
+
+@pytest.mark.asyncio
+async def test_local_import_commits_documents_in_batches(tmp_path) -> None:
+    for name in ("first", "second", "third"):
+        (tmp_path / f"{name}.md").write_text(
+            f"# {name.title()}\n\nKnowledge for {name}.\n\n## Detail\n\nEvidence.",
+            encoding="utf-8",
+        )
+    api_client = FakeApiClient(tmp_path)
+
+    result = await run_local_import(
+        LocalImportOptions(
+            path=tmp_path,
+            source_ref_prefix="catalog://batch-commit",
+            commit_batch_size=2,
+        ),
+        api_client=api_client,
+        contextualizer=FakeBatchContextualizer(),
+    )
+
+    assert len(api_client.commit_requests) == 2
+    assert [len(request.plan.documents) for request in api_client.commit_requests] == [2, 1]
+    for request in api_client.commit_requests:
+        document_ids = {document.id for document in request.plan.documents}
+        assert {item.document_id for item in request.plan.items} == document_ids
+    assert result.commit is not None
+    assert result.commit.documents == 3
+    assert result.commit.items == len(result.plan.items)
+    assert result.commit.created == len(result.plan.items)
+    assert len(result.commit.created_ids) == len(result.plan.items)
+
+
+@pytest.mark.asyncio
+async def test_local_import_reports_iterative_progress(tmp_path) -> None:
+    source = tmp_path / "note.md"
+    source.write_text("# Note\n\nUseful knowledge.\n\n## Detail\n\nEvidence.", encoding="utf-8")
+    stream = io.StringIO()
+
+    await run_local_import(
+        LocalImportOptions(path=tmp_path),
+        api_client=FakeApiClient(tmp_path),
+        contextualizer=FakeBatchContextualizer(),
+        progress=ProgressReporter(streams=[stream]),
+    )
+
+    progress = stream.getvalue()
+
+    assert "analyzing docs" in progress
+    assert "contextualizing batch" in progress
+    assert "committing batch" in progress
+    assert "committed import" in progress
 
 
 @pytest.mark.asyncio
@@ -241,6 +436,117 @@ def test_knowledge_context_schema_requires_category() -> None:
 
     assert "category" in schema["required"]
     assert schema["properties"]["category"]["maxLength"] == 120
+
+
+def test_knowledge_context_batch_schema_requires_document_id_and_category() -> None:
+    schema = _knowledge_context_batch_schema()
+    item_schema = schema["properties"]["contexts"]["items"]
+
+    assert "document_id" in item_schema["required"]
+    assert "category" in item_schema["required"]
+
+
+def test_parse_knowledge_context_batch_returns_context_by_document_id() -> None:
+    contexts = _parse_knowledge_context_batch(
+        """{
+          "contexts": [
+            {
+              "document_id": "document-1",
+              "title": "Knowledge one",
+              "summary": "Summary one.",
+              "purpose": "Purpose one.",
+              "domain": "engineering",
+              "category": "technical rule",
+              "key_topics": ["Rule"],
+              "important_sections": ["Evidence"],
+              "entities": [],
+              "tags": ["rule"],
+              "confidence": 0.9
+            }
+          ]
+        }"""
+    )
+
+    assert contexts["document-1"].title == "Knowledge one"
+    assert contexts["document-1"].category == "technical rule"
+
+
+def test_knowledge_batch_prompt_includes_all_document_ids(tmp_path) -> None:
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("Alpha knowledge.", encoding="utf-8")
+    second.write_text("Beta knowledge.", encoding="utf-8")
+    requests = [
+        KnowledgeContextRequest(
+            document=IngestionDocument(
+                id="document-1",
+                relative_path="first.md",
+                source_ref="catalog://first.md",
+                title="First",
+                summary="First summary",
+                content_hash="hash-1",
+                byte_length=10,
+                item_count=1,
+            ),
+            macro_item=IngestionItem(
+                id="item-1",
+                document_id="document-1",
+                order_index=0,
+                item_type="document",
+                memory_type="context",
+                title="First",
+                summary="First summary",
+                source_ref="catalog://first.md#document",
+                payload={
+                    "memory_type": "context",
+                    "title": "First",
+                    "content": "First",
+                    "source": {"source_type": "test", "source_ref": "catalog://first.md"},
+                },
+            ),
+            child_items=[],
+        ),
+        KnowledgeContextRequest(
+            document=IngestionDocument(
+                id="document-2",
+                relative_path="second.md",
+                source_ref="catalog://second.md",
+                title="Second",
+                summary="Second summary",
+                content_hash="hash-2",
+                byte_length=10,
+                item_count=1,
+            ),
+            macro_item=IngestionItem(
+                id="item-2",
+                document_id="document-2",
+                order_index=0,
+                item_type="document",
+                memory_type="context",
+                title="Second",
+                summary="Second summary",
+                source_ref="catalog://second.md#document",
+                payload={
+                    "memory_type": "context",
+                    "title": "Second",
+                    "content": "Second",
+                    "source": {"source_type": "test", "source_ref": "catalog://second.md"},
+                },
+            ),
+            child_items=[],
+        ),
+    ]
+
+    prompt = _context_batch_prompt(
+        root_path=tmp_path,
+        requests=requests,
+        redact_secrets=True,
+        max_file_chars=100,
+    )
+
+    assert "multiple local docs" in prompt
+    assert '"document_id": "document-1"' in prompt
+    assert '"document_id": "document-2"' in prompt
 
 
 def test_codex_cli_contextualizer_uses_top_level_approval_and_utf8(monkeypatch, tmp_path) -> None:

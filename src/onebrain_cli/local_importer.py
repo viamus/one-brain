@@ -10,9 +10,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TextIO, TypeVar
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -33,6 +34,9 @@ from onebrain_core.contracts.schemas import (
 
 DEFAULT_API_URL = "http://127.0.0.1:8088/api/v1"
 DEFAULT_PATH_MAPPINGS = r"C:\DoxieOS=/mnt/doxie"
+DEFAULT_API_TIMEOUT_SECONDS = 300.0
+DEFAULT_COMMIT_BATCH_SIZE = 25
+T = TypeVar("T")
 
 
 class KnowledgeEntityContext(BaseModel):
@@ -67,6 +71,13 @@ class Contextualizer(Protocol):
 
 
 @dataclass(frozen=True)
+class KnowledgeContextRequest:
+    document: IngestionDocument
+    macro_item: IngestionItem
+    child_items: list[IngestionItem]
+
+
+@dataclass(frozen=True)
 class LocalImportOptions:
     path: Path
     api_path: str | None = None
@@ -84,6 +95,9 @@ class LocalImportOptions:
     max_content_chars: int = 24_000
     dry_run: bool = False
     analyze_only: bool = False
+    commit_batch_size: int = DEFAULT_COMMIT_BATCH_SIZE
+    api_timeout_seconds: float = DEFAULT_API_TIMEOUT_SECONDS
+    include_evidence_items: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +106,8 @@ class CodexCliOptions:
     model: str | None = None
     timeout_seconds: int = 180
     max_file_chars: int = 16_000
+    batch_size: int = 8
+    max_workers: int = 2
     enabled: bool = True
 
 
@@ -119,13 +135,49 @@ class LocalImportResult:
         }
 
 
+class ProgressReporter:
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        streams: list[TextIO] | None = None,
+    ) -> None:
+        self._enabled = enabled
+        self._streams = streams or [sys.stderr]
+        self._started = time.monotonic()
+
+    def event(self, message: str, **fields: Any) -> None:
+        if not self._enabled:
+            return
+        elapsed = time.monotonic() - self._started
+        details = " ".join(
+            f"{key}={self._format_value(value)}"
+            for key, value in fields.items()
+            if value is not None
+        )
+        line = f"[onebrain-import +{elapsed:7.1f}s] {message}"
+        if details:
+            line = f"{line} {details}"
+        for stream in self._streams:
+            print(line, file=stream, flush=True)
+
+    @staticmethod
+    def _format_value(value: Any) -> str:
+        if isinstance(value, Path):
+            return str(value)
+        text = str(value)
+        if any(character.isspace() for character in text):
+            return json.dumps(text, ensure_ascii=False)
+        return text
+
+
 class OneBrainIngestionApiClient:
     def __init__(
         self,
         *,
         api_url: str = DEFAULT_API_URL,
         api_key: str | None = None,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = DEFAULT_API_TIMEOUT_SECONDS,
     ) -> None:
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
@@ -192,6 +244,24 @@ class HeuristicContextualizer:
             confidence=0.64,
         )
 
+    async def contextualize_batch(
+        self,
+        *,
+        root_path: Path,
+        requests: list[KnowledgeContextRequest],
+        redact_secrets: bool,
+    ) -> dict[str, KnowledgeContext]:
+        contexts: dict[str, KnowledgeContext] = {}
+        for request in requests:
+            contexts[request.document.id] = await self.contextualize(
+                root_path=root_path,
+                document=request.document,
+                macro_item=request.macro_item,
+                child_items=request.child_items,
+                redact_secrets=redact_secrets,
+            )
+        return contexts
+
 
 class CodexCliContextualizer:
     def __init__(self, options: CodexCliOptions | None = None) -> None:
@@ -220,12 +290,62 @@ class CodexCliContextualizer:
         output = await asyncio.to_thread(self._run_codex, prompt, cwd)
         return _parse_knowledge_context(output)
 
-    def _run_codex(self, prompt: str, cwd: Path) -> str:
+    async def contextualize_batch(
+        self,
+        *,
+        root_path: Path,
+        requests: list[KnowledgeContextRequest],
+        redact_secrets: bool,
+    ) -> dict[str, KnowledgeContext]:
+        if len(requests) == 1:
+            request = requests[0]
+            return {
+                request.document.id: await self.contextualize(
+                    root_path=root_path,
+                    document=request.document,
+                    macro_item=request.macro_item,
+                    child_items=request.child_items,
+                    redact_secrets=redact_secrets,
+                )
+            }
+        prompt = _context_batch_prompt(
+            root_path=root_path,
+            requests=requests,
+            redact_secrets=redact_secrets,
+            max_file_chars=self._options.max_file_chars,
+        )
+        cwd = await asyncio.to_thread(_codex_cwd, root_path)
+        output = await asyncio.to_thread(
+            self._run_codex,
+            prompt,
+            cwd,
+            _knowledge_context_batch_schema(),
+            "knowledge-context-batch.schema.json",
+        )
+        return _parse_knowledge_context_batch(output)
+
+    @property
+    def batch_size(self) -> int:
+        return max(1, self._options.batch_size)
+
+    @property
+    def max_workers(self) -> int:
+        return max(1, self._options.max_workers)
+
+    def _run_codex(
+        self,
+        prompt: str,
+        cwd: Path,
+        schema: dict[str, Any] | None = None,
+        schema_name: str = "knowledge-context.schema.json",
+    ) -> str:
         command = _codex_command(self._options.command)
         with tempfile.TemporaryDirectory(prefix="onebrain-codex-") as temp_dir:
-            schema_path = Path(temp_dir) / "knowledge-context.schema.json"
+            schema_path = Path(temp_dir) / schema_name
             output_path = Path(temp_dir) / "context.json"
-            schema_path.write_text(json.dumps(_knowledge_context_schema()), encoding="utf-8")
+            schema_path.write_text(
+                json.dumps(schema or _knowledge_context_schema()), encoding="utf-8"
+            )
             args = [
                 *command,
                 "--ask-for-approval",
@@ -268,12 +388,20 @@ async def run_local_import(
     *,
     api_client: OneBrainIngestionApiClient | None = None,
     contextualizer: Contextualizer | None = None,
+    progress: ProgressReporter | None = None,
 ) -> LocalImportResult:
     local_path = options.path.expanduser().resolve()
     api_path = options.api_path or resolve_mapped_path(str(local_path), options.path_mappings)
+    if progress:
+        progress.event(
+            "resolved import paths",
+            local_path=local_path,
+            api_path=api_path,
+        )
     client = api_client or OneBrainIngestionApiClient(
         api_url=options.api_url,
         api_key=options.api_key,
+        timeout_seconds=options.api_timeout_seconds,
     )
     analyze_request = IngestionAnalyzeRequest(
         path=api_path,
@@ -287,20 +415,66 @@ async def run_local_import(
         max_files=options.max_files,
         max_content_chars=options.max_content_chars,
     )
+    if progress:
+        progress.event("analyzing docs", source_type=options.source_type)
     plan = await client.analyze(analyze_request)
+    if progress:
+        progress.event(
+            "analyzed docs",
+            documents=len(plan.documents),
+            items=len(plan.items),
+            warnings=len(plan.warnings),
+        )
     selected_contextualizer = contextualizer or HeuristicContextualizer()
+    if progress:
+        progress.event(
+            "contextualizing knowledge",
+            contextualizer=_contextualizer_name(selected_contextualizer),
+            documents=len(plan.documents),
+            batch_size=_contextualizer_batch_size(selected_contextualizer),
+            workers=_contextualizer_worker_count(selected_contextualizer),
+        )
     enriched, contextualized, warnings = await enrich_plan_with_context(
         plan,
         root_path=local_path,
         contextualizer=selected_contextualizer,
         contextualizer_name=_contextualizer_name(selected_contextualizer),
         redact_secrets=options.redact_secrets,
+        progress=progress,
     )
+    import_plan = _plan_for_knowledge_import(
+        enriched,
+        include_evidence_items=options.include_evidence_items,
+    )
+    if progress:
+        progress.event(
+            "contextualized knowledge",
+            contextualized=contextualized,
+            warnings=len(warnings),
+            fallback=enriched.stats.get("fallback_contextualizations", 0),
+            import_items=len(import_plan.items),
+            omitted_evidence=import_plan.stats.get("omitted_evidence_items", 0),
+        )
     commit_result = None
     if not options.analyze_only:
-        commit_result = await client.commit(
-            IngestionCommitRequest(plan=enriched, dry_run=options.dry_run)
+        commit_result = await commit_plan_in_batches(
+            client,
+            import_plan,
+            dry_run=options.dry_run,
+            batch_size=options.commit_batch_size,
+            progress=progress,
         )
+        if progress:
+            progress.event(
+                "committed import",
+                documents=commit_result.documents,
+                items=commit_result.items,
+                created=commit_result.created,
+                skipped=commit_result.skipped_existing,
+                failed=commit_result.failed,
+            )
+    elif progress:
+        progress.event("skipped commit", reason="analyze_only")
     return LocalImportResult(
         api_path=api_path,
         local_path=str(local_path),
@@ -308,8 +482,133 @@ async def run_local_import(
         analyzed_documents=len(plan.documents),
         contextualized_documents=contextualized,
         commit=commit_result,
-        plan=enriched,
+        plan=import_plan,
         warnings=warnings,
+    )
+
+
+async def commit_plan_in_batches(
+    client: OneBrainIngestionApiClient,
+    plan: IngestionPlan,
+    *,
+    dry_run: bool,
+    batch_size: int,
+    progress: ProgressReporter | None = None,
+) -> IngestionCommitResult:
+    document_batches = _batches(plan.documents, batch_size)
+    if len(document_batches) <= 1:
+        if progress:
+            progress.event(
+                "committing batch",
+                batch="1/1",
+                documents=len(plan.documents),
+                items=len(plan.items),
+                dry_run=dry_run,
+            )
+        result = await client.commit(IngestionCommitRequest(plan=plan, dry_run=dry_run))
+        if progress:
+            progress.event(
+                "committed batch",
+                batch="1/1",
+                created=result.created,
+                skipped=result.skipped_existing,
+                failed=result.failed,
+            )
+        return result
+
+    merged = IngestionCommitResult(dry_run=dry_run)
+    for index, document_batch in enumerate(document_batches, start=1):
+        batch_plan = _plan_for_documents(
+            plan,
+            document_ids={document.id for document in document_batch},
+        )
+        batch_label = f"{index}/{len(document_batches)}"
+        if progress:
+            progress.event(
+                "committing batch",
+                batch=batch_label,
+                documents=len(batch_plan.documents),
+                items=len(batch_plan.items),
+                dry_run=dry_run,
+            )
+        batch_result = await client.commit(IngestionCommitRequest(plan=batch_plan, dry_run=dry_run))
+        if progress:
+            progress.event(
+                "committed batch",
+                batch=batch_label,
+                created=batch_result.created,
+                skipped=batch_result.skipped_existing,
+                failed=batch_result.failed,
+            )
+        merged = _merge_commit_results(merged, batch_result)
+    return merged
+
+
+def _plan_for_documents(plan: IngestionPlan, *, document_ids: set[str]) -> IngestionPlan:
+    documents = [document for document in plan.documents if document.id in document_ids]
+    items = [item for item in plan.items if item.document_id in document_ids]
+    stats = {
+        **plan.stats,
+        "commit_batch_documents": len(documents),
+        "commit_batch_items": len(items),
+    }
+    return plan.model_copy(update={"documents": documents, "items": items, "stats": stats})
+
+
+def _plan_for_knowledge_import(
+    plan: IngestionPlan,
+    *,
+    include_evidence_items: bool,
+) -> IngestionPlan:
+    if include_evidence_items:
+        return plan.model_copy(
+            update={
+                "stats": {
+                    **plan.stats,
+                    "evidence_items_included": True,
+                    "omitted_evidence_items": 0,
+                    "import_items": len(plan.items),
+                }
+            }
+        )
+
+    items = [item for item in plan.items if item.item_type == "document"]
+    item_count_by_document: dict[str, int] = {}
+    for item in items:
+        item_count_by_document[item.document_id] = (
+            item_count_by_document.get(item.document_id, 0) + 1
+        )
+    documents = [
+        document.model_copy(update={"item_count": item_count_by_document.get(document.id, 0)})
+        for document in plan.documents
+    ]
+    omitted = len(plan.items) - len(items)
+    stats = {
+        **plan.stats,
+        "evidence_items_included": False,
+        "omitted_evidence_items": omitted,
+        "import_items": len(items),
+    }
+    return plan.model_copy(update={"documents": documents, "items": items, "stats": stats})
+
+
+def _merge_commit_results(
+    left: IngestionCommitResult,
+    right: IngestionCommitResult,
+) -> IngestionCommitResult:
+    return IngestionCommitResult(
+        dry_run=left.dry_run,
+        documents=left.documents + right.documents,
+        items=left.items + right.items,
+        created=left.created + right.created,
+        skipped_existing=left.skipped_existing + right.skipped_existing,
+        failed=left.failed + right.failed,
+        created_ids=[*left.created_ids, *right.created_ids],
+        memory_id_by_item_id={
+            **left.memory_id_by_item_id,
+            **right.memory_id_by_item_id,
+        },
+        errors=[*left.errors, *right.errors],
     )
 
 
@@ -320,6 +619,7 @@ async def enrich_plan_with_context(
     contextualizer: Contextualizer,
     contextualizer_name: str = "codex-cli",
     redact_secrets: bool,
+    progress: ProgressReporter | None = None,
 ) -> tuple[IngestionPlan, int, list[str]]:
     items_by_document: dict[str, list[IngestionItem]] = {}
     for item in plan.items:
@@ -329,6 +629,7 @@ async def enrich_plan_with_context(
     contexts: dict[str, tuple[KnowledgeContext, str]] = {}
     warnings: list[str] = []
     fallback_contextualizations = 0
+    context_requests: list[KnowledgeContextRequest] = []
 
     for document in plan.documents:
         document_items = items_by_document.get(document.id, [])
@@ -337,26 +638,147 @@ async def enrich_plan_with_context(
         if macro is None:
             warnings.append(f"{document.relative_path}: macro item not found")
             continue
-        try:
-            context = await contextualizer.contextualize(
-                root_path=root_path,
+        context_requests.append(
+            KnowledgeContextRequest(
                 document=document,
                 macro_item=macro,
                 child_items=children,
-                redact_secrets=redact_secrets,
             )
-            contexts[document.id] = (context, contextualizer_name)
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"{document.relative_path}: contextualization failed: {str(exc)[:500]}")
-            fallback_contextualizations += 1
-            context = await HeuristicContextualizer().contextualize(
-                root_path=root_path,
-                document=document,
-                macro_item=macro,
-                child_items=children,
-                redact_secrets=redact_secrets,
+        )
+
+    contextualize_batch = getattr(contextualizer, "contextualize_batch", None)
+    if callable(contextualize_batch):
+        request_batches = _batches(context_requests, _contextualizer_batch_size(contextualizer))
+        worker_count = min(
+            _contextualizer_worker_count(contextualizer),
+            len(request_batches) or 1,
+        )
+        semaphore = asyncio.Semaphore(worker_count)
+
+        async def contextualize_request_batch(
+            index: int,
+            request_batch: list[KnowledgeContextRequest],
+        ) -> tuple[dict[str, tuple[KnowledgeContext, str]], list[str], int]:
+            batch_context_entries: dict[str, tuple[KnowledgeContext, str]] = {}
+            batch_warnings: list[str] = []
+            batch_fallback_contextualizations = 0
+            batch_label = f"{index}/{len(request_batches)}"
+            try:
+                async with semaphore:
+                    if progress:
+                        progress.event(
+                            "contextualizing batch",
+                            batch=batch_label,
+                            documents=len(request_batch),
+                            first=(
+                                request_batch[0].document.relative_path if request_batch else None
+                            ),
+                            workers=worker_count,
+                        )
+                    batch_contexts = await contextualize_batch(
+                        root_path=root_path,
+                        requests=request_batch,
+                        redact_secrets=redact_secrets,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                batch_path_label = ", ".join(
+                    request.document.relative_path for request in request_batch[:3]
+                )
+                batch_warnings.append(
+                    f"{batch_path_label}: batch contextualization failed: {str(exc)[:500]}"
+                )
+                batch_contexts = {}
+                if progress:
+                    progress.event(
+                        "contextualization batch failed",
+                        batch=batch_label,
+                        error=str(exc)[:180],
+                    )
+
+            for request in request_batch:
+                context = batch_contexts.get(request.document.id)
+                if context is not None:
+                    batch_context_entries[request.document.id] = (
+                        context,
+                        contextualizer_name,
+                    )
+                    continue
+                batch_fallback_contextualizations += 1
+                batch_warnings.append(
+                    f"{request.document.relative_path}: using heuristic fallback context"
+                )
+                fallback = await HeuristicContextualizer().contextualize(
+                    root_path=root_path,
+                    document=request.document,
+                    macro_item=request.macro_item,
+                    child_items=request.child_items,
+                    redact_secrets=redact_secrets,
+                )
+                batch_context_entries[request.document.id] = (fallback, "heuristic")
+            if progress:
+                progress.event(
+                    "contextualized batch",
+                    batch=batch_label,
+                    contextualized=sum(
+                        1 for request in request_batch if request.document.id in batch_contexts
+                    ),
+                    fallback=sum(
+                        1 for request in request_batch if request.document.id not in batch_contexts
+                    ),
+                )
+            return (
+                batch_context_entries,
+                batch_warnings,
+                batch_fallback_contextualizations,
             )
-            contexts[document.id] = (context, "heuristic")
+
+        batch_results = await asyncio.gather(
+            *[
+                contextualize_request_batch(index, request_batch)
+                for index, request_batch in enumerate(request_batches, start=1)
+            ]
+        )
+        for batch_context_entries, batch_warnings, batch_fallback_count in batch_results:
+            contexts.update(batch_context_entries)
+            warnings.extend(batch_warnings)
+            fallback_contextualizations += batch_fallback_count
+    else:
+        for index, request in enumerate(context_requests, start=1):
+            if progress:
+                progress.event(
+                    "contextualizing document",
+                    document=f"{index}/{len(context_requests)}",
+                    path=request.document.relative_path,
+                )
+            try:
+                context = await contextualizer.contextualize(
+                    root_path=root_path,
+                    document=request.document,
+                    macro_item=request.macro_item,
+                    child_items=request.child_items,
+                    redact_secrets=redact_secrets,
+                )
+                contexts[request.document.id] = (context, contextualizer_name)
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{request.document.relative_path}: contextualization failed: {str(exc)[:500]}"
+                )
+                fallback_contextualizations += 1
+                fallback = await HeuristicContextualizer().contextualize(
+                    root_path=root_path,
+                    document=request.document,
+                    macro_item=request.macro_item,
+                    child_items=request.child_items,
+                    redact_secrets=redact_secrets,
+                )
+                contexts[request.document.id] = (fallback, "heuristic")
+                if progress:
+                    progress.event(
+                        "contextualization fallback",
+                        document=f"{index}/{len(context_requests)}",
+                        path=request.document.relative_path,
+                        error=str(exc)[:180],
+                    )
 
     for item in plan.items:
         context_entry = contexts.get(item.document_id)
@@ -485,6 +907,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--api-url", default=os.getenv("ONEBRAIN_API_URL", DEFAULT_API_URL))
     parser.add_argument(
+        "--api-timeout-seconds",
+        type=float,
+        default=float(os.getenv("ONEBRAIN_API_TIMEOUT_SECONDS", str(DEFAULT_API_TIMEOUT_SECONDS))),
+        help="Timeout for each OneBrain API request.",
+    )
+    parser.add_argument(
         "--api-key",
         default=os.getenv("ONEBRAIN_API_KEY") or os.getenv("ONEBRAIN_MCP_CLIENT_KEY"),
     )
@@ -515,11 +943,47 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-content-chars", type=int, default=24_000)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--analyze-only", action="store_true")
+    parser.add_argument(
+        "--include-evidence-items",
+        action="store_true",
+        help=(
+            "Also import section/evidence memories. By default only knowledge contexts "
+            "are committed."
+        ),
+    )
+    parser.add_argument(
+        "--commit-batch-size",
+        type=int,
+        default=int(os.getenv("ONEBRAIN_COMMIT_BATCH_SIZE", str(DEFAULT_COMMIT_BATCH_SIZE))),
+        help="Number of source docs per ingestion commit request.",
+    )
     parser.add_argument("--skip-codex", action="store_true")
     parser.add_argument("--codex-command", default=os.getenv("ONEBRAIN_CODEX_COMMAND", "codex"))
     parser.add_argument("--codex-model", default=os.getenv("ONEBRAIN_CODEX_MODEL"))
     parser.add_argument("--codex-timeout-seconds", type=int, default=180)
     parser.add_argument("--codex-max-file-chars", type=int, default=16_000)
+    parser.add_argument(
+        "--codex-batch-size",
+        type=int,
+        default=int(os.getenv("ONEBRAIN_CODEX_BATCH_SIZE", "8")),
+        help="Number of source docs to learn from per Codex CLI call.",
+    )
+    parser.add_argument(
+        "--codex-workers",
+        type=int,
+        default=int(os.getenv("ONEBRAIN_CODEX_WORKERS", "2")),
+        help="Number of concurrent Codex exec workers for contextualization batches.",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable progress logs on stderr.",
+    )
+    parser.add_argument(
+        "--progress-log",
+        default=os.getenv("ONEBRAIN_IMPORT_PROGRESS_LOG"),
+        help="Optional file path to append progress logs.",
+    )
     parser.add_argument("--output", help="Optional path to write the full import result JSON.")
     return parser
 
@@ -527,7 +991,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
 async def async_main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    progress_file: TextIO | None = None
     try:
+        progress_streams = [sys.stderr]
+        if args.progress_log:
+            progress_file = await asyncio.to_thread(
+                Path(args.progress_log).open,
+                "a",
+                encoding="utf-8",
+            )
+            progress_streams.append(progress_file)
+        progress = ProgressReporter(
+            enabled=not args.no_progress,
+            streams=progress_streams,
+        )
         docs_path = _resolve_docs_path(args.docs, args.path)
         scope = _load_scope(args.scope_json, args.scope_json_file)
         contextualizer: Contextualizer
@@ -540,6 +1017,8 @@ async def async_main(argv: list[str] | None = None) -> int:
                     model=args.codex_model,
                     timeout_seconds=args.codex_timeout_seconds,
                     max_file_chars=args.codex_max_file_chars,
+                    batch_size=args.codex_batch_size,
+                    max_workers=args.codex_workers,
                 )
             )
         result = await run_local_import(
@@ -548,6 +1027,7 @@ async def async_main(argv: list[str] | None = None) -> int:
                 api_path=args.api_path,
                 api_url=args.api_url,
                 api_key=args.api_key,
+                api_timeout_seconds=args.api_timeout_seconds,
                 path_mappings=args.path_mappings,
                 scope=scope,
                 source_type=args.source_type,
@@ -560,19 +1040,26 @@ async def async_main(argv: list[str] | None = None) -> int:
                 max_content_chars=args.max_content_chars,
                 dry_run=args.dry_run,
                 analyze_only=args.analyze_only,
+                commit_batch_size=args.commit_batch_size,
+                include_evidence_items=args.include_evidence_items,
             ),
             contextualizer=contextualizer,
+            progress=progress,
         )
+
+        output = result.as_dict()
+        rendered = json.dumps(output, indent=2, ensure_ascii=False)
+        if args.output:
+            await asyncio.to_thread(Path(args.output).write_text, rendered, encoding="utf-8")
+            progress.event("wrote output", output=args.output)
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(rendered)
     except Exception as exc:  # noqa: BLE001
         parser.exit(1, f"onebrain-local-import: error: {exc}\n")
-
-    output = result.as_dict()
-    rendered = json.dumps(output, indent=2, ensure_ascii=False)
-    if args.output:
-        await asyncio.to_thread(Path(args.output).write_text, rendered, encoding="utf-8")
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(rendered)
+    finally:
+        if progress_file is not None:
+            progress_file.close()
     return 0
 
 
@@ -622,6 +1109,50 @@ def _context_prompt(
         "<source_evidence>\n"
         f"{file_text}\n"
         "</source_evidence>\n"
+    )
+
+
+def _context_batch_prompt(
+    *,
+    root_path: Path,
+    requests: list[KnowledgeContextRequest],
+    redact_secrets: bool,
+    max_file_chars: int,
+) -> str:
+    documents: list[dict[str, Any]] = []
+    for request in requests:
+        text = _read_text(_local_file_path(root_path, request.document.relative_path))
+        if redact_secrets:
+            text, _ = redact_secret_text(text)
+        documents.append(
+            {
+                "document_id": request.document.id,
+                "provenance_relative_path": request.document.relative_path,
+                "provenance_source_ref": request.document.source_ref,
+                "initial_title": request.macro_item.title,
+                "initial_summary": request.macro_item.summary,
+                "detected_sections": [
+                    {
+                        "title": item.title,
+                        "summary": item.summary,
+                        "memory_type": item.memory_type,
+                        "source_ref": item.source_ref,
+                    }
+                    for item in request.child_items[:16]
+                ],
+                "source_evidence": _truncate(text, max_file_chars),
+            }
+        )
+    return (
+        "You are preparing a OneBrain knowledge import for multiple local docs. You are not "
+        "importing file bodies; you are learning durable operational knowledge from source "
+        "evidence. For every input document_id, synthesize one knowledge profile. Treat paths "
+        "and source refs strictly as provenance, not memory topics. Categorize the knowledge, "
+        "name the real workflow, rule, concept, tool, pattern, pitfall, or decision represented, "
+        "and include graph/search entities. Bring relevant technical knowledge only when it is "
+        "directly supported by the evidence. Do not invent unrelated claims. Do not copy secrets, "
+        "tokens, or long source text. Return only JSON that matches the provided schema.\n\n"
+        f"Source docs JSON: {json.dumps(documents, ensure_ascii=False)}\n"
     )
 
 
@@ -681,12 +1212,57 @@ def _knowledge_context_schema() -> dict[str, Any]:
     }
 
 
+def _knowledge_context_batch_schema() -> dict[str, Any]:
+    item_schema = _knowledge_context_schema()
+    item_properties = {
+        "document_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        **item_schema["properties"],
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["contexts"],
+        "properties": {
+            "contexts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["document_id", *item_schema["required"]],
+                    "properties": item_properties,
+                },
+            }
+        },
+    }
+
+
 def _parse_knowledge_context(output: str) -> KnowledgeContext:
     parsed = _parse_json_object(output)
     try:
         return KnowledgeContext.model_validate(parsed)
     except ValidationError as exc:
         raise RuntimeError(f"codex context did not match schema: {exc}") from exc
+
+
+def _parse_knowledge_context_batch(output: str) -> dict[str, KnowledgeContext]:
+    parsed = _parse_json_object(output)
+    contexts = parsed.get("contexts")
+    if not isinstance(contexts, list):
+        raise RuntimeError("codex batch context response must include a contexts array")
+    output_by_document: dict[str, KnowledgeContext] = {}
+    for raw_context in contexts:
+        if not isinstance(raw_context, dict):
+            raise RuntimeError("codex batch context items must be JSON objects")
+        document_id = raw_context.get("document_id")
+        if not isinstance(document_id, str) or not document_id.strip():
+            raise RuntimeError("codex batch context item missing document_id")
+        context_payload = {key: value for key, value in raw_context.items() if key != "document_id"}
+        try:
+            output_by_document[document_id] = KnowledgeContext.model_validate(context_payload)
+        except ValidationError as exc:
+            raise RuntimeError(f"codex batch context did not match schema: {exc}") from exc
+    return output_by_document
 
 
 def _parse_json_object(output: str) -> dict[str, Any]:
@@ -870,6 +1446,27 @@ def _unique_compact(values: list[str], *, limit: int) -> list[str]:
         if len(output) >= limit:
             break
     return output
+
+
+def _batches(values: list[T], size: int) -> list[list[T]]:
+    safe_size = max(1, size)
+    return [values[index : index + safe_size] for index in range(0, len(values), safe_size)]
+
+
+def _contextualizer_batch_size(contextualizer: Contextualizer) -> int:
+    value = getattr(contextualizer, "batch_size", 1)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _contextualizer_worker_count(contextualizer: Contextualizer) -> int:
+    value = getattr(contextualizer, "max_workers", 1)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _codex_command(command: str) -> list[str]:
