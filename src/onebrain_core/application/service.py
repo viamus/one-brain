@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import combinations
+from pathlib import PurePosixPath
 from typing import Any
 
 import structlog
@@ -13,10 +14,14 @@ from sqlalchemy import Select, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from onebrain.config import Settings
-from onebrain.embeddings import EmbeddingProvider
-from onebrain.models import AuditEvent, Entity, Memory, MemoryEntity, Relation
-from onebrain.schemas import (
+from onebrain_core.common.config import Settings
+from onebrain_core.common.text import (
+    content_hash,
+    estimate_tokens,
+    extract_heuristic_entities,
+    normalize_name,
+)
+from onebrain_core.contracts.schemas import (
     ContextMemory,
     ContextPack,
     ContextRequest,
@@ -35,8 +40,16 @@ from onebrain.schemas import (
     SearchRequest,
     SearchResponse,
 )
-from onebrain.text import content_hash, estimate_tokens, extract_heuristic_entities, normalize_name
-from onebrain.vector_store import QdrantMemoryStore
+from onebrain_core.infrastructure.embeddings import EmbeddingProvider
+from onebrain_core.infrastructure.models import (
+    AuditEvent,
+    Entity,
+    Memory,
+    MemoryEntity,
+    MemoryLink,
+    Relation,
+)
+from onebrain_core.infrastructure.vector_store import QdrantMemoryStore
 
 LOGGER = structlog.get_logger(__name__)
 
@@ -160,6 +173,11 @@ CORRELATION_STOPWORDS = {
     "work",
 }
 
+GENERIC_MEMORY_TITLES = {
+    "document",
+    "document body",
+}
+
 
 class OneBrainService:
     def __init__(
@@ -253,6 +271,67 @@ class OneBrainService:
             if memory is None:
                 raise KeyError(f"memory source_ref not found: {source_ref}")
             return MemoryOut.model_validate(memory)
+
+    async def link_memories(
+        self,
+        *,
+        from_memory_id: uuid.UUID | str,
+        to_memory_id: uuid.UUID | str,
+        link_type: str,
+        confidence: float = 0.85,
+        order_index: int | None = None,
+        evidence: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        from_id = uuid.UUID(str(from_memory_id))
+        to_id = uuid.UUID(str(to_memory_id))
+        normalized_link_type = normalize_name(link_type)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(MemoryLink)
+                .where(MemoryLink.from_memory_id == from_id)
+                .where(MemoryLink.to_memory_id == to_id)
+                .where(MemoryLink.link_type == normalized_link_type)
+            )
+            link = result.scalar_one_or_none()
+            if link is None:
+                link = MemoryLink(
+                    from_memory_id=from_id,
+                    to_memory_id=to_id,
+                    link_type=normalized_link_type,
+                )
+                session.add(link)
+
+            link.confidence = confidence
+            link.order_index = order_index
+            link.evidence = evidence
+            link.metadata_ = metadata or {}
+            await session.flush()
+            session.add(
+                AuditEvent(
+                    actor=actor,
+                    action="memory.link",
+                    subject_type="memory_link",
+                    subject_id=link.id,
+                    details={
+                        "from_memory_id": str(from_id),
+                        "to_memory_id": str(to_id),
+                        "link_type": normalized_link_type,
+                    },
+                )
+            )
+            await session.commit()
+            return {
+                "id": str(link.id),
+                "from_memory_id": str(from_id),
+                "to_memory_id": str(to_id),
+                "link_type": normalized_link_type,
+                "confidence": link.confidence,
+                "order_index": link.order_index,
+                "evidence": link.evidence,
+                "metadata": link.metadata_,
+            }
 
     async def index_memory(self, memory_id: uuid.UUID) -> None:
         async with self._session_factory() as session:
@@ -396,7 +475,9 @@ class OneBrainService:
         return CorrelationResponse(correlations=correlations[: request.limit])
 
     async def build_graph(self, request: GraphRequest) -> GraphResponse:
-        memories = await self._graph_memories(request)
+        candidate_memories = await self._graph_memories(request)
+        memories = [memory for memory in candidate_memories if self._is_graph_memory(memory)]
+        omitted = len(candidate_memories) - len(memories)
         memory_ids = {memory.id for memory in memories}
         nodes: dict[str, GraphNode] = {}
         edges: dict[str, GraphEdge] = {}
@@ -408,7 +489,11 @@ class OneBrainService:
         if memory_ids and (
             request.include_entities or request.include_relations or request.include_correlations
         ):
-            entity_rows = await self._graph_memory_entities(memory_ids)
+            entity_rows = [
+                row
+                for row in await self._graph_memory_entities(memory_ids)
+                if self._is_graph_entity(row[2])
+            ]
 
         entity_ids = {entity.id for _, _, entity in entity_rows}
         include_entity_nodes = request.include_entities or request.include_relations
@@ -445,6 +530,25 @@ class OneBrainService:
                         if relation.evidence_memory_id
                         else None,
                         "metadata": relation.metadata_,
+                    },
+                )
+                edges[edge.id] = edge
+
+        if request.include_relations and memory_ids:
+            for link in await self._graph_memory_links(memory_ids):
+                edge = GraphEdge(
+                    id=f"memory_link:{link.id}",
+                    source=self._memory_node_id(link.from_memory_id),
+                    target=self._memory_node_id(link.to_memory_id),
+                    edge_type="memory_link",
+                    label=link.link_type,
+                    weight=max(0.25, link.confidence),
+                    confidence=link.confidence,
+                    metadata={
+                        "link_type": link.link_type,
+                        "order_index": link.order_index,
+                        "evidence": link.evidence,
+                        "metadata": link.metadata_,
                     },
                 )
                 edges[edge.id] = edge
@@ -487,6 +591,7 @@ class OneBrainService:
             edges=sorted(edges.values(), key=lambda item: (item.edge_type, item.label or "")),
             memory_count=len(memories),
             entity_count=len(entity_ids),
+            omitted=omitted,
         )
 
     async def health(self) -> dict[str, bool]:
@@ -651,6 +756,16 @@ class OneBrainService:
                 .where(Relation.from_entity_id.in_(entity_ids))
                 .where(Relation.to_entity_id.in_(entity_ids))
                 .limit(1000)
+            )
+            return list(result.scalars().all())
+
+    async def _graph_memory_links(self, memory_ids: set[uuid.UUID]) -> list[MemoryLink]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(MemoryLink)
+                .where(MemoryLink.from_memory_id.in_(memory_ids))
+                .where(MemoryLink.to_memory_id.in_(memory_ids))
+                .limit(2000)
             )
             return list(result.scalars().all())
 
@@ -978,6 +1093,17 @@ class OneBrainService:
             return True
         return normalize_name(memory.title or "") == "imported memory library"
 
+    def _is_graph_memory(self, memory: Memory) -> bool:
+        metadata = memory.metadata_ or {}
+        if "ingestion:child" in memory.tags:
+            return False
+        if metadata.get("ingestion_item_type") == "section":
+            return False
+        return True
+
+    def _is_graph_entity(self, entity: Entity) -> bool:
+        return entity.entity_type != "source_document"
+
     def _max_correlation_facet_frequency(self, facet: str, memory_count: int) -> int:
         if facet.startswith("context:"):
             return 0
@@ -1290,9 +1416,83 @@ class OneBrainService:
         )
 
     def _memory_label(self, memory: Memory) -> str:
-        if memory.title:
-            return self._shorten(memory.title, 80)
+        title = (memory.title or "").strip()
+        if title and not self._is_generic_memory_title(title):
+            return self._shorten(title, 80)
+        derived_label = self._derived_memory_label(memory)
+        if derived_label:
+            return self._shorten(derived_label, 80)
         return self._shorten(self._preview(memory.content), 80)
+
+    def _is_generic_memory_title(self, value: str) -> bool:
+        normalized = re.sub(r"\s+\(\d+/\d+\)$", "", normalize_name(value)).strip()
+        return normalized in GENERIC_MEMORY_TITLES
+
+    def _derived_memory_label(self, memory: Memory) -> str | None:
+        metadata = memory.metadata_ or {}
+        relative_path = (
+            self._metadata_string(metadata, "relative_path")
+            or self._source_document_from_content(memory.content)
+            or self._source_path_from_ref(memory.source_ref)
+        )
+        source_label = self._source_file_label(relative_path)
+        section_title = self._metadata_string(metadata, "section_title")
+        summary = self._metadata_string(metadata, "summary") or self._summary_from_content(
+            memory.content
+        )
+
+        if section_title and not self._is_generic_memory_title(section_title):
+            if source_label:
+                return f"{source_label}: {section_title}"
+            return section_title
+        if source_label and summary and not self._is_generic_summary(summary):
+            return f"{source_label}: {summary}"
+        if source_label and (order_index := metadata.get("order_index")):
+            return f"{source_label}: section {order_index}"
+        if source_label:
+            return source_label
+        if summary and not self._is_generic_summary(summary):
+            return summary
+        return None
+
+    def _metadata_string(self, metadata: dict[str, Any], key: str) -> str | None:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    def _source_document_from_content(self, content: str) -> str | None:
+        match = re.search(r"(?im)^Source document:\s*(.+?)\s*$", content)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r"(?im)^Source file:\s*(.+?)\s*$", content)
+        if match:
+            return match.group(1).strip()
+        return None
+
+    def _source_path_from_ref(self, source_ref: str | None) -> str | None:
+        if not source_ref:
+            return None
+        return source_ref.split("#", 1)[0].strip()
+
+    def _source_file_label(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = value.replace("\\", "/").rstrip("/")
+        if not normalized:
+            return None
+        name = PurePosixPath(normalized).name
+        return name or normalized
+
+    def _summary_from_content(self, content: str) -> str | None:
+        match = re.search(r"(?im)^Summary:\s*(.+?)\s*$", content)
+        if not match:
+            return None
+        return match.group(1).strip()
+
+    def _is_generic_summary(self, value: str) -> bool:
+        normalized = normalize_name(value)
+        return normalized in {"no textual content available", "document body", "document"}
 
     def _preview(self, value: str, max_length: int = 280) -> str:
         return self._shorten(" ".join(value.split()), max_length)

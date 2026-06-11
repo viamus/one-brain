@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from onebrain.schemas import MemoryCreate
+from onebrain_core.contracts.schemas import MemoryCreate
 
 ALLOWED_TEXT_EXTENSIONS = {
     "",

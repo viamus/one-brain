@@ -18,8 +18,6 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"] = "local"
     log_level: str = "INFO"
     api_keys: str = ""
-    mcp_host: str = "127.0.0.1"
-    mcp_port: int = 8090
     mcp_require_api_key: bool = True
     mcp_path_mappings: str = ""
 
@@ -48,8 +46,6 @@ class Settings(BaseSettings):
             raise ValueError("ONEBRAIN_API_KEYS is required in production")
         if self.vector_size <= 0:
             raise ValueError("ONEBRAIN_VECTOR_SIZE must be positive")
-        if self.mcp_port <= 0:
-            raise ValueError("ONEBRAIN_MCP_PORT must be positive")
         return self
 
 
