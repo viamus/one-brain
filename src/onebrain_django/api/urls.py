@@ -16,6 +16,11 @@ urlpatterns = [
     path("ingestion/commit", views.commit_ingestion, name="ingestion-commit"),
     path("search", views.search, name="search"),
     path("graph", views.graph, name="graph"),
+    path(
+        "jobs/graph-aggregation/status",
+        views.graph_aggregation_job_status,
+        name="graph-aggregation-job-status",
+    ),
     path("context", views.context_pack, name="context-pack"),
     path("correlate", views.correlate, name="correlate"),
 ]
