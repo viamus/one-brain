@@ -55,6 +55,13 @@ def validate_payload(model: type[T], payload: dict[str, Any]) -> T | JsonRespons
         return error_response(exc.errors(), status=422)
 
 
+def parse_body_or_error(request: HttpRequest) -> dict[str, object] | JsonResponse:
+    try:
+        return parse_json_body(request)
+    except ValueError as exc:
+        return error_response(str(exc), status=400)
+
+
 async def maybe_await(value: T | Awaitable[T]) -> T:
     if inspect.isawaitable(value):
         return await value

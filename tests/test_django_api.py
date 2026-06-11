@@ -9,6 +9,8 @@ from onebrain.config import Settings
 from onebrain.schemas import GraphResponse, SearchResponse
 from onebrain_django.runtime import clear_runtime_overrides, set_runtime_overrides
 
+API_PREFIX = "/api/v1"
+
 
 class FakeDjangoService:
     async def health(self) -> dict[str, bool]:
@@ -43,7 +45,7 @@ def test_django_readyz_is_public_even_when_api_keys_are_configured() -> None:
 
 def test_django_post_requires_api_key() -> None:
     response = Client().post(
-        "/v1/search",
+        f"{API_PREFIX}/search",
         data=json.dumps({"query": "django"}),
         content_type="application/json",
     )
@@ -53,7 +55,7 @@ def test_django_post_requires_api_key() -> None:
 
 def test_django_post_accepts_bearer_api_key() -> None:
     response = Client().post(
-        "/v1/search",
+        f"{API_PREFIX}/search",
         data=json.dumps({"query": "django"}),
         content_type="application/json",
         HTTP_AUTHORIZATION="Bearer secret",
@@ -65,7 +67,7 @@ def test_django_post_accepts_bearer_api_key() -> None:
 
 def test_django_rejects_malformed_json() -> None:
     response = Client().post(
-        "/v1/search",
+        f"{API_PREFIX}/search",
         data="{broken",
         content_type="application/json",
         HTTP_X_API_KEY="secret",
@@ -76,16 +78,28 @@ def test_django_rejects_malformed_json() -> None:
 
 
 def test_django_graph_query_rejects_invalid_limit() -> None:
-    response = Client().get("/v1/graph?limit=abc", HTTP_X_API_KEY="secret")
+    response = Client().get(f"{API_PREFIX}/graph?limit=abc", HTTP_X_API_KEY="secret")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "limit must be an integer"
 
 
 def test_django_graph_query_rejects_limit_out_of_range() -> None:
-    response = Client().get("/v1/graph?limit=9999", HTTP_X_API_KEY="secret")
+    response = Client().get(f"{API_PREFIX}/graph?limit=9999", HTTP_X_API_KEY="secret")
 
     assert response.status_code == 422
+
+
+def test_django_legacy_v1_alias_still_routes_to_django_api() -> None:
+    response = Client().post(
+        "/v1/search",
+        data=json.dumps({"query": "django"}),
+        content_type="application/json",
+        HTTP_X_API_KEY="secret",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"query": "django", "hits": []}
 
 
 def test_django_graph_data_stays_public_for_local_visualization() -> None:

@@ -26,6 +26,8 @@ TIME_ZONE = "UTC"
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
+    "onebrain_django.api",
+    "onebrain_django.web",
 ]
 
 MIDDLEWARE = [

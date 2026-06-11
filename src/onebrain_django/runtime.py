@@ -21,7 +21,8 @@ class RuntimeBundle:
     service: OneBrainService
 
 
-_bundles: dict[int | None, RuntimeBundle] = {}
+_loop_bundles: dict[asyncio.AbstractEventLoop, RuntimeBundle] = {}
+_sync_bundle: RuntimeBundle | None = None
 
 
 def get_runtime_settings() -> Settings:
@@ -29,22 +30,34 @@ def get_runtime_settings() -> Settings:
 
 
 def get_runtime_service() -> Any:
+    global _sync_bundle
     if _service_override is not None:
         return _service_override
-    runtime_key = _current_loop_key()
-    bundle = _bundles.get(runtime_key)
+    loop = _current_loop()
+    if loop is None:
+        bundle = _sync_bundle
+    else:
+        bundle = _loop_bundles.get(loop)
     if bundle is None:
         settings = get_runtime_settings()
         engine = create_engine(settings)
         bundle = RuntimeBundle(engine=engine, service=build_service(settings, engine))
-        _bundles[runtime_key] = bundle
+        if loop is None:
+            _sync_bundle = bundle
+        else:
+            _loop_bundles[loop] = bundle
     return bundle.service
 
 
 async def close_runtime() -> None:
-    for bundle in list(_bundles.values()):
+    global _sync_bundle
+    bundles = list(_loop_bundles.values())
+    if _sync_bundle is not None:
+        bundles.append(_sync_bundle)
+    for bundle in bundles:
         await bundle.engine.dispose()
-    _bundles.clear()
+    _loop_bundles.clear()
+    _sync_bundle = None
 
 
 def set_runtime_overrides(
@@ -61,8 +74,8 @@ def clear_runtime_overrides() -> None:
     set_runtime_overrides(settings=None, service=None)
 
 
-def _current_loop_key() -> int | None:
+def _current_loop() -> asyncio.AbstractEventLoop | None:
     try:
-        return id(asyncio.get_running_loop())
+        return asyncio.get_running_loop()
     except RuntimeError:
         return None
