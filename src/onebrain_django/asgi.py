@@ -9,6 +9,8 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.routing import Mount
 
+from onebrain_django.disconnects import DisconnectTolerantAsgiApp
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "onebrain_django.settings")
 
 
@@ -17,7 +19,7 @@ def build_application() -> Starlette:
     from onebrain_django.mcp.server import build_mcp_asgi_app
     from onebrain_django.runtime import close_runtime, get_runtime_settings
 
-    django_application = get_asgi_application()
+    django_application = DisconnectTolerantAsgiApp(get_asgi_application())
     mcp_application = build_mcp_asgi_app()
     mcp_routes = [
         route for route in mcp_application.routes if getattr(route, "path", None) == MCP_PATH
