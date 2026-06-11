@@ -475,7 +475,9 @@ class OneBrainService:
         return CorrelationResponse(correlations=correlations[: request.limit])
 
     async def build_graph(self, request: GraphRequest) -> GraphResponse:
-        memories = await self._graph_memories(request)
+        candidate_memories = await self._graph_memories(request)
+        memories = [memory for memory in candidate_memories if self._is_graph_memory(memory)]
+        omitted = len(candidate_memories) - len(memories)
         memory_ids = {memory.id for memory in memories}
         nodes: dict[str, GraphNode] = {}
         edges: dict[str, GraphEdge] = {}
@@ -487,7 +489,11 @@ class OneBrainService:
         if memory_ids and (
             request.include_entities or request.include_relations or request.include_correlations
         ):
-            entity_rows = await self._graph_memory_entities(memory_ids)
+            entity_rows = [
+                row
+                for row in await self._graph_memory_entities(memory_ids)
+                if self._is_graph_entity(row[2])
+            ]
 
         entity_ids = {entity.id for _, _, entity in entity_rows}
         include_entity_nodes = request.include_entities or request.include_relations
@@ -585,6 +591,7 @@ class OneBrainService:
             edges=sorted(edges.values(), key=lambda item: (item.edge_type, item.label or "")),
             memory_count=len(memories),
             entity_count=len(entity_ids),
+            omitted=omitted,
         )
 
     async def health(self) -> dict[str, bool]:
@@ -1085,6 +1092,17 @@ class OneBrainService:
         if source_ref.endswith("/library.json"):
             return True
         return normalize_name(memory.title or "") == "imported memory library"
+
+    def _is_graph_memory(self, memory: Memory) -> bool:
+        metadata = memory.metadata_ or {}
+        if "ingestion:child" in memory.tags:
+            return False
+        if metadata.get("ingestion_item_type") == "section":
+            return False
+        return True
+
+    def _is_graph_entity(self, entity: Entity) -> bool:
+        return entity.entity_type != "source_document"
 
     def _max_correlation_facet_frequency(self, facet: str, memory_count: int) -> int:
         if facet.startswith("context:"):

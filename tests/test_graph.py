@@ -404,6 +404,97 @@ def test_memory_graph_label_uses_source_ref_when_generic_metadata_is_missing() -
 
 
 @pytest.mark.asyncio
+async def test_build_graph_omits_ingestion_child_memories() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    context = Memory(
+        id=uuid.uuid4(),
+        memory_type="context",
+        title="Runtime platform",
+        content="Macro context with source references.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:macro"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+        metadata_={"ingestion_item_type": "document"},
+    )
+    child = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="runtime.md: section 1",
+        content="Detailed file body.",
+        content_hash="b",
+        scope={"project": "one-brain"},
+        tags=["ingestion:child"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+        metadata_={"ingestion_item_type": "section"},
+    )
+
+    async def fake_graph_memories(request: GraphRequest):
+        return [child, context]
+
+    service._graph_memories = fake_graph_memories
+
+    result = await service.build_graph(
+        GraphRequest(include_entities=False, include_relations=False, include_correlations=False)
+    )
+
+    assert [node.label for node in result.nodes] == ["Runtime platform"]
+    assert result.memory_count == 1
+    assert result.omitted == 1
+
+
+@pytest.mark.asyncio
+async def test_build_graph_omits_source_document_entities() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory_id = uuid.uuid4()
+    memory = Memory(
+        id=memory_id,
+        memory_type="context",
+        title="Runtime platform",
+        content="Macro context with source references.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:macro"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+    )
+    source_document = Entity(
+        id=uuid.uuid4(),
+        name="sources/platform/runtime.md",
+        normalized_name="sources/platform/runtime.md",
+        entity_type="source_document",
+    )
+    concept = Entity(
+        id=uuid.uuid4(),
+        name="Runtime platform",
+        normalized_name="runtime platform",
+        entity_type="concept",
+    )
+
+    async def fake_graph_memories(request: GraphRequest):
+        return [memory]
+
+    async def fake_graph_memory_entities(memory_ids: set[uuid.UUID]):
+        return [
+            (memory_id, "source", source_document),
+            (memory_id, "subject", concept),
+        ]
+
+    service._graph_memories = fake_graph_memories
+    service._graph_memory_entities = fake_graph_memory_entities
+
+    result = await service.build_graph(
+        GraphRequest(include_entities=True, include_relations=False, include_correlations=False)
+    )
+
+    assert {node.label for node in result.nodes} == {"Runtime platform"}
+    assert all(node.subtype != "source_document" for node in result.nodes)
+    assert result.entity_count == 1
+
+
+@pytest.mark.asyncio
 async def test_graph_query_caps_internal_search_limit() -> None:
     service = OneBrainService.__new__(OneBrainService)
 
