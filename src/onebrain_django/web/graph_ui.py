@@ -77,6 +77,20 @@ GRAPH_UI_HTML = """<!doctype html>
       backdrop-filter: blur(14px);
     }
 
+    .header-main {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .menu-toggle {
+      min-width: 72px;
+      border-color: color-mix(in srgb, var(--ob-tigerlily) 22%, var(--line));
+      background: color-mix(in srgb, var(--ob-tigerlily) 8%, var(--control));
+      color: var(--ob-text);
+    }
+
     h1 {
       margin: 0;
       font-size: 18px;
@@ -95,21 +109,90 @@ GRAPH_UI_HTML = """<!doctype html>
       text-overflow: ellipsis;
     }
 
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: end;
+    .graph-shell {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      transition: grid-template-columns 160ms ease;
+    }
+
+    body[data-menu-collapsed="true"] .graph-shell {
+      grid-template-columns: 56px minmax(0, 1fr);
+    }
+
+    .graph-menu {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      border-right: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      background: color-mix(in srgb, var(--ob-ink-2) 96%, transparent);
+    }
+
+    .menu-content {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
       gap: 10px;
-      padding: 12px 18px;
-      border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-      background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
-      box-shadow: inset 0 1px 0 rgba(242, 239, 231, 0.035);
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .menu-collapsed-label {
+      display: none;
+      position: absolute;
+      inset: 12px 0 auto;
+      color: var(--ob-muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-align: center;
+      text-transform: uppercase;
+      writing-mode: vertical-rl;
+      justify-self: center;
+    }
+
+    body[data-menu-collapsed="true"] .menu-content {
+      display: none;
+    }
+
+    body[data-menu-collapsed="true"] .menu-collapsed-label {
+      display: block;
+    }
+
+    .menu-section {
+      display: grid;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+      border-radius: var(--ob-radius-panel);
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+    }
+
+    .menu-section-groups {
+      min-height: 0;
+      align-content: start;
+    }
+
+    .menu-section-title {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .toolbar {
+      display: grid;
+      gap: 10px;
+      padding: 10px;
     }
 
     .control {
       display: grid;
       gap: 4px;
-      flex: 1 1 150px;
       min-width: 120px;
       color: var(--muted);
       font-size: 12px;
@@ -117,15 +200,15 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .control-query {
-      flex: 2 1 260px;
+      min-width: 0;
     }
 
     .control-scope {
-      flex: 1.4 1 230px;
+      min-width: 0;
     }
 
     .control-short {
-      flex: 0 1 118px;
+      min-width: 0;
     }
 
     .toggle-control {
@@ -155,9 +238,9 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .toolbar-actions {
-      display: inline-flex;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
-      align-self: end;
     }
 
     input,
@@ -200,14 +283,15 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .workspace {
-      flex: 1 1 auto;
-      min-height: 440px;
+      min-width: 0;
+      min-height: 0;
     }
 
     .canvas-shell {
       position: relative;
       min-width: 0;
       height: 100%;
+      min-height: calc(100vh - 56px);
       background:
         radial-gradient(circle at 28% 12%, rgba(217, 119, 87, 0.08), transparent 28rem),
         var(--canvas);
@@ -261,9 +345,11 @@ GRAPH_UI_HTML = """<!doctype html>
       z-index: 3;
       top: 12px;
       left: 12px;
-      display: grid;
-      gap: 7px;
-      width: min(280px, calc(100% - 24px));
+      right: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: auto;
       padding: 8px 10px;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       border-radius: var(--ob-radius-panel);
@@ -275,21 +361,19 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .group-panel {
-      position: absolute;
-      z-index: 3;
-      left: 12px;
-      bottom: 12px;
+      position: static;
+      z-index: auto;
       display: grid;
       gap: 8px;
-      width: min(360px, calc(100% - 24px));
-      max-height: min(340px, calc(100% - 120px));
-      overflow: hidden;
-      padding: 10px;
-      border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-      border-radius: var(--ob-radius-panel);
-      background: var(--panel-float);
-      backdrop-filter: blur(8px);
-      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+      width: 100%;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      backdrop-filter: none;
+      box-shadow: none;
     }
 
     .group-panel[hidden] {
@@ -310,7 +394,25 @@ GRAPH_UI_HTML = """<!doctype html>
       display: grid;
       gap: 6px;
       overflow: auto;
+      max-height: min(44vh, 420px);
       padding-right: 2px;
+    }
+
+    .group-empty {
+      min-height: 72px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed color-mix(in srgb, var(--line) 84%, transparent);
+      border-radius: var(--ob-radius-compact);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .group-empty[hidden] {
+      display: none;
     }
 
     .group-item {
@@ -343,15 +445,17 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .legend-title {
+      flex: 0 0 auto;
       color: var(--ink);
       font-size: 12px;
       font-weight: 800;
     }
 
     .legend-grid {
+      flex: 1 1 auto;
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 10px;
+      gap: 7px 14px;
     }
 
     .legend-item {
@@ -393,12 +497,48 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     @media (max-width: 980px) {
+      .graph-shell {
+        grid-template-columns: 1fr;
+      }
+
+      body[data-menu-collapsed="true"] .graph-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .graph-menu {
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      }
+
+      body[data-menu-collapsed="true"] .graph-menu {
+        display: none;
+      }
+
       .metrics {
         right: 12px;
+      }
+
+      .canvas-shell {
+        min-height: calc(100vh - 56px);
       }
     }
 
     @media (max-width: 760px) {
+      header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .status {
+        max-width: none;
+        text-align: left;
+      }
+
+      .legend {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
       .metrics {
         top: auto;
         right: 12px;
@@ -412,88 +552,108 @@ GRAPH_UI_HTML = """<!doctype html>
     }
   </style>
 </head>
-<body>
+<body data-menu-collapsed="false">
   <header>
-    <h1>OneBrain Correlations</h1>
+    <div class="header-main">
+      <button class="menu-toggle" id="menuToggle" type="button" aria-controls="graphMenu" aria-expanded="true">Collapse</button>
+      <h1>OneBrain Correlations</h1>
+    </div>
     <div class="status" id="status">Idle</div>
   </header>
 
-  <section class="toolbar" aria-label="Correlation filters">
-    <label class="control control-query">Search
-      <input id="query" type="search" autocomplete="off" placeholder="memory, skill, workflow">
-    </label>
-    <label class="control">Memory type
-      <select id="type">
-        <option value="">All</option>
-        <option value="skill">Skill</option>
-        <option value="workflow">Workflow</option>
-        <option value="rule">Rule</option>
-        <option value="decision">Decision</option>
-        <option value="context">Context</option>
-        <option value="fact">Fact</option>
-        <option value="note">Note</option>
-      </select>
-    </label>
-    <label class="control control-short">Memory limit
-      <input id="limit" type="number" min="1" max="500" step="1" value="100">
-    </label>
-    <label class="control control-scope">Scope JSON
-      <input id="scope" type="text" autocomplete="off" placeholder='{"project":"one-brain"}'>
-    </label>
-    <label class="control control-short">Correlation limit
-      <input id="correlationLimit" type="number" min="0" max="2000" step="10" value="250">
-    </label>
-    <label class="control control-short">Max degree
-      <input id="maxDegree" type="number" min="1" max="50" step="1" value="6">
-    </label>
-    <label class="toggle-control" title="Include vector-neighbor correlation edges">
-      <span>Vector edges</span>
-      <input id="includeVectorCorrelations" type="checkbox" checked>
-    </label>
-    <label class="toggle-control" title="Show detected grouping opportunity nodes">
-      <span>Groups</span>
-      <input id="includeGroupingOpportunities" type="checkbox" checked>
-    </label>
-    <label class="toggle-control" title="Use the dark graph theme">
-      <span>Night mode</span>
-      <input id="nightMode" type="checkbox">
-    </label>
-    <div class="toolbar-actions">
-      <button class="primary" id="load">Load</button>
-      <button id="spread">Spread</button>
-      <button id="fit">Fit</button>
-    </div>
-  </section>
+  <main class="graph-shell">
+    <aside class="graph-menu" id="graphMenu">
+      <div class="menu-collapsed-label">Menu</div>
+      <div class="menu-content">
+        <section class="menu-section toolbar" aria-label="Correlation filters">
+          <span class="menu-section-title">Filters</span>
+          <label class="control control-query">Search
+            <input id="query" type="search" autocomplete="off" placeholder="memory, skill, workflow">
+          </label>
+          <label class="control">Memory type
+            <select id="type">
+              <option value="">All</option>
+              <option value="skill">Skill</option>
+              <option value="workflow">Workflow</option>
+              <option value="rule">Rule</option>
+              <option value="decision">Decision</option>
+              <option value="context">Context</option>
+              <option value="fact">Fact</option>
+              <option value="note">Note</option>
+            </select>
+          </label>
+          <label class="control control-short">Memory limit
+            <input id="limit" type="number" min="1" max="500" step="1" value="100">
+          </label>
+          <label class="control control-scope">Scope JSON
+            <input id="scope" type="text" autocomplete="off" placeholder='{"project":"one-brain"}'>
+          </label>
+          <label class="control control-short">Correlation limit
+            <input id="correlationLimit" type="number" min="0" max="2000" step="10" value="250">
+          </label>
+          <label class="control control-short">Max degree
+            <input id="maxDegree" type="number" min="1" max="50" step="1" value="6">
+          </label>
+        </section>
 
-  <main class="workspace">
-    <section class="canvas-shell">
-      <canvas id="graph" aria-label="OneBrain correlation canvas"></canvas>
-      <section class="metrics" aria-label="Graph metrics">
-        <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
-        <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
-        <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
-        <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
-      </section>
-      <div class="legend" aria-label="Color legend">
-        <span class="legend-title">Legend</span>
-        <div class="legend-grid">
-          <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
-          <span class="legend-item"><span class="dot" style="background: var(--context)"></span>Context</span>
-          <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
-          <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
-          <span class="legend-item"><span class="dot" style="background: var(--fact)"></span>Fact</span>
-          <span class="legend-item"><span class="dot" style="background: var(--note)"></span>Note</span>
-          <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
-          <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
-          <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
-        </div>
+        <section class="menu-section" aria-label="Graph display controls">
+          <span class="menu-section-title">Display</span>
+          <label class="toggle-control" title="Include vector-neighbor correlation edges">
+            <span>Vector edges</span>
+            <input id="includeVectorCorrelations" type="checkbox" checked>
+          </label>
+          <label class="toggle-control" title="Show detected grouping opportunity nodes">
+            <span>Groups</span>
+            <input id="includeGroupingOpportunities" type="checkbox" checked>
+          </label>
+          <label class="toggle-control" title="Use the dark graph theme">
+            <span>Night mode</span>
+            <input id="nightMode" type="checkbox">
+          </label>
+          <div class="toolbar-actions">
+            <button class="primary" id="load">Load</button>
+            <button id="spread">Spread</button>
+            <button id="fit">Fit</button>
+          </div>
+        </section>
+
+        <section class="menu-section menu-section-groups">
+          <span class="menu-section-title">Grouping Opportunities</span>
+          <div class="group-empty" id="groupEmpty">Load the graph to inspect detected aggregation candidates.</div>
+          <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
+            <div class="group-panel-head">
+              <span>Detected clusters</span>
+              <span id="groupPanelCount">0</span>
+            </div>
+            <div class="group-list" id="groupList"></div>
+          </section>
+        </section>
       </div>
-      <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
-        <div class="group-panel-head">
-          <span>Grouping Opportunities</span>
-          <span id="groupPanelCount">0</span>
+    </aside>
+
+    <section class="workspace">
+      <section class="canvas-shell">
+        <canvas id="graph" aria-label="OneBrain correlation canvas"></canvas>
+        <section class="metrics" aria-label="Graph metrics">
+          <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
+          <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
+          <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
+          <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
+        </section>
+        <div class="legend legend-horizontal" aria-label="Color legend">
+          <span class="legend-title">Legend</span>
+          <div class="legend-grid">
+            <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
+            <span class="legend-item"><span class="dot" style="background: var(--context)"></span>Context</span>
+            <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
+            <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
+            <span class="legend-item"><span class="dot" style="background: var(--fact)"></span>Fact</span>
+            <span class="legend-item"><span class="dot" style="background: var(--note)"></span>Note</span>
+            <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
+            <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
+            <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
+          </div>
         </div>
-        <div class="group-list" id="groupList"></div>
       </section>
     </section>
   </main>
@@ -501,12 +661,14 @@ GRAPH_UI_HTML = """<!doctype html>
   <script>
     const canvas = document.getElementById("graph");
     const ctx = canvas.getContext("2d");
+    const menuToggleEl = document.getElementById("menuToggle");
     const statusEl = document.getElementById("status");
     const nodeCountEl = document.getElementById("nodeCount");
     const edgeCountEl = document.getElementById("edgeCount");
     const memoryCountEl = document.getElementById("memoryCount");
     const groupCountEl = document.getElementById("groupCount");
     const groupPanelEl = document.getElementById("groupPanel");
+    const groupEmptyEl = document.getElementById("groupEmpty");
     const groupPanelCountEl = document.getElementById("groupPanelCount");
     const groupListEl = document.getElementById("groupList");
     const queryEl = document.getElementById("query");
@@ -530,6 +692,9 @@ GRAPH_UI_HTML = """<!doctype html>
     let lastPointer = null;
     let running = false;
     let animationFrameId = null;
+    let simulationTicksRemaining = 0;
+    let simulationStartedWithTicks = 0;
+    let palette = {};
 
     const colors = {
       memory: "--memory",
@@ -545,8 +710,40 @@ GRAPH_UI_HTML = """<!doctype html>
       grouping: "--grouping"
     };
 
+    const paletteVarNames = [
+      "--canvas",
+      "--graph-grid",
+      "--graph-grid-strong",
+      "--graph-vignette",
+      "--node-glint",
+      "--memory",
+      "--skill",
+      "--workflow",
+      "--entity",
+      "--context",
+      "--note",
+      "--fact",
+      "--grouping",
+      "--centroid",
+      "--focus",
+      "--focus-soft",
+      "--correlation",
+      "--edge",
+      "--label",
+      "--ink",
+      "--node-stroke"
+    ];
+
+    function refreshPalette() {
+      const style = getComputedStyle(document.documentElement);
+      palette = {};
+      for (const name of paletteVarNames) {
+        palette[name] = style.getPropertyValue(name).trim();
+      }
+    }
+
     function cssVar(name) {
-      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return palette[name] || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     }
 
     function nodeColor(node) {
@@ -581,6 +778,16 @@ GRAPH_UI_HTML = """<!doctype html>
     function setStatus(value, isError = false) {
       statusEl.textContent = value;
       statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+    }
+
+    function setMenuCollapsed(collapsed) {
+      document.body.dataset.menuCollapsed = String(collapsed);
+      menuToggleEl.textContent = collapsed ? "Menu" : "Collapse";
+      menuToggleEl.setAttribute("aria-expanded", String(!collapsed));
+      window.setTimeout(() => {
+        resize();
+        fitGraph();
+      }, 180);
     }
 
     function parseScope() {
@@ -691,6 +898,7 @@ GRAPH_UI_HTML = """<!doctype html>
     function renderGroupingOpportunities() {
       const groups = graph.grouping_opportunities || [];
       groupPanelEl.hidden = !groups.length;
+      groupEmptyEl.hidden = Boolean(groups.length);
       groupPanelCountEl.textContent = groups.length;
       groupListEl.replaceChildren();
       for (const group of groups) {
@@ -775,33 +983,49 @@ GRAPH_UI_HTML = """<!doctype html>
       return base + bonus + Math.min(6, Math.round((node.weight || 1) * 4));
     }
 
-    function startSimulation() {
+    function simulationTickBudget() {
+      const count = graph.nodes.length;
+      if (count > 260) return 70;
+      if (count > 140) return 100;
+      return 160;
+    }
+
+    function startSimulation(ticks = simulationTickBudget()) {
       if (animationFrameId !== null) {
         cancelAnimationFrame(animationFrameId);
       }
       running = true;
+      simulationTicksRemaining = ticks;
+      simulationStartedWithTicks = ticks;
       animationFrameId = requestAnimationFrame(tick);
     }
 
     function tick() {
       animationFrameId = null;
       if (!running) return;
-      simulate();
+      const energy = simulate();
       draw();
+      simulationTicksRemaining -= 1;
+      const elapsedTicks = simulationStartedWithTicks - simulationTicksRemaining;
+      if (simulationTicksRemaining <= 0 || (elapsedTicks > 24 && energy < 0.018)) {
+        running = false;
+        return;
+      }
       animationFrameId = requestAnimationFrame(tick);
     }
 
     function simulate() {
       const nodes = graph.nodes;
       const edges = graph.edges;
-      if (!nodes.length) return;
+      if (!nodes.length) return 0;
       for (const node of nodes) {
         node.fx = 0;
         node.fy = 0;
       }
 
+      const pairStride = nodes.length > 180 ? Math.ceil(nodes.length / 160) : 1;
       for (let i = 0; i < nodes.length; i += 1) {
-        for (let j = i + 1; j < nodes.length; j += 1) {
+        for (let j = i + 1; j < nodes.length; j += pairStride) {
           const a = nodes[i];
           const b = nodes[j];
           const dx = b.x - a.x;
@@ -849,6 +1073,7 @@ GRAPH_UI_HTML = """<!doctype html>
       const rect = canvas.getBoundingClientRect();
       const centerX = (rect.width / 2 - transform.x) / transform.scale;
       const centerY = (rect.height / 2 - transform.y) / transform.scale;
+      let energy = 0;
       for (const node of nodes) {
         if (node === dragging) continue;
         if (Number.isFinite(node.anchorX) && Number.isFinite(node.anchorY)) {
@@ -861,7 +1086,9 @@ GRAPH_UI_HTML = """<!doctype html>
         node.vy = clamp((node.vy + node.fy) * 0.84, -7, 7);
         node.x += node.vx;
         node.y += node.vy;
+        energy += Math.abs(node.vx) + Math.abs(node.vy);
       }
+      return energy / nodes.length;
     }
 
     function clamp(value, min, max) {
@@ -898,6 +1125,7 @@ GRAPH_UI_HTML = """<!doctype html>
 
     function draw() {
       const rect = canvas.getBoundingClientRect();
+      refreshPalette();
       ctx.clearRect(0, 0, rect.width, rect.height);
       drawCanvasBackground(rect);
       ctx.save();
@@ -1207,9 +1435,11 @@ GRAPH_UI_HTML = """<!doctype html>
     });
 
     canvas.addEventListener("pointerup", () => {
+      const wasDragging = Boolean(dragging);
       dragging = null;
       panning = false;
       lastPointer = null;
+      if (wasDragging) startSimulation(70);
     });
 
     canvas.addEventListener("pointerleave", () => {
@@ -1231,6 +1461,9 @@ GRAPH_UI_HTML = """<!doctype html>
       draw();
     }, { passive: false });
 
+    menuToggleEl.addEventListener("click", () => {
+      setMenuCollapsed(document.body.dataset.menuCollapsed !== "true");
+    });
     document.getElementById("load").addEventListener("click", loadGraph);
     document.getElementById("spread").addEventListener("click", spreadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
