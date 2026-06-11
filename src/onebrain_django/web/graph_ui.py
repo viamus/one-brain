@@ -1,5 +1,9 @@
 # ruff: noqa: E501
 
+from __future__ import annotations
+
+from onebrain_django.web.design_system import ONEBRAIN_DESIGN_SYSTEM_CSS
+
 GRAPH_UI_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -66,6 +70,8 @@ GRAPH_UI_HTML = """<!doctype html>
       --focus-soft: rgba(93, 167, 240, 0.24);
       --danger: #ee786f;
     }
+
+    __ONEBRAIN_DESIGN_SYSTEM_CSS__
 
     * { box-sizing: border-box; }
 
@@ -1227,4 +1233,4 @@ GRAPH_UI_HTML = """<!doctype html>
 
 
 def graph_view_html() -> str:
-    return GRAPH_UI_HTML
+    return GRAPH_UI_HTML.replace("__ONEBRAIN_DESIGN_SYSTEM_CSS__", ONEBRAIN_DESIGN_SYSTEM_CSS)

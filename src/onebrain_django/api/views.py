@@ -19,6 +19,7 @@ from onebrain_core.contracts.schemas import (
     SkillCreate,
 )
 from onebrain_core.ingestion import analyze_memory_files, commit_ingestion_plan
+from onebrain_django.api.openapi import openapi_schema
 from onebrain_django.http import (
     error_response,
     json_response,
@@ -28,6 +29,10 @@ from onebrain_django.http import (
     validate_payload,
 )
 from onebrain_django.runtime import get_runtime_service, get_runtime_settings
+
+
+async def openapi_json(_request: HttpRequest) -> JsonResponse:
+    return json_response(openapi_schema())
 
 
 @csrf_exempt

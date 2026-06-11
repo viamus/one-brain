@@ -43,6 +43,34 @@ def test_django_readyz_is_public_even_when_api_keys_are_configured() -> None:
     assert response.json() == {"database": True, "qdrant": True}
 
 
+def test_django_home_serves_workbench_even_when_api_keys_are_configured() -> None:
+    response = Client().get("/")
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "OneBrain Workbench" in content
+    assert 'src="/graph"' in content
+    assert "/api/openapi.json" in content
+    assert "Swagger" in content
+
+
+def test_django_openapi_json_is_public_and_describes_secured_api() -> None:
+    response = Client().get("/api/openapi.json")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["openapi"] == "3.1.0"
+    assert payload["info"]["title"] == "OneBrain Django API"
+    assert "/api/v1/search" in payload["paths"]
+    assert "/api/v1/graph" in payload["paths"]
+    assert "ApiKeyAuth" in payload["components"]["securitySchemes"]
+    assert "BearerAuth" in payload["components"]["securitySchemes"]
+    assert payload["paths"]["/api/v1/search"]["post"]["security"] == [
+        {"ApiKeyAuth": []},
+        {"BearerAuth": []},
+    ]
+
+
 def test_django_post_requires_api_key() -> None:
     response = Client().post(
         f"{API_PREFIX}/search",

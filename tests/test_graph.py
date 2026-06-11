@@ -1023,6 +1023,7 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     html = graph_view_html()
 
     assert ':root[data-theme="dark"]' in html
+    assert "--ob-tigerlily" in html
     assert 'id="nightMode" type="checkbox"' in html
     assert 'class="legend-title">Legend</span>' in html
     assert 'id="spread"' in html

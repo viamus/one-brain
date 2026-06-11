@@ -12,6 +12,7 @@ from onebrain_django.http import (
     validate_payload,
 )
 from onebrain_django.runtime import get_runtime_service
+from onebrain_django.web.console_ui import console_view_html
 from onebrain_django.web.graph_ui import graph_view_html
 
 
@@ -28,6 +29,10 @@ async def readyz(_request: HttpRequest) -> JsonResponse:
 
 async def graph_view(_request: HttpRequest) -> HttpResponse:
     return HttpResponse(graph_view_html(), content_type="text/html; charset=utf-8")
+
+
+async def home_view(_request: HttpRequest) -> HttpResponse:
+    return HttpResponse(console_view_html(), content_type="text/html; charset=utf-8")
 
 
 @csrf_exempt
