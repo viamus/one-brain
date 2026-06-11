@@ -19,6 +19,6 @@ COPY migrations ./migrations
 
 RUN uv sync --frozen --no-dev --no-editable
 
-EXPOSE 8080
+EXPOSE 8080 8090
 
-CMD ["uvicorn", "onebrain.api:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["onebrain-mcp-http"]

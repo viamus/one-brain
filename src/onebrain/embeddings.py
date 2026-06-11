@@ -7,9 +7,12 @@ import re
 from collections.abc import Sequence
 from typing import Protocol
 
+import structlog
+
 from onebrain.config import Settings
 
 TOKEN_RE = re.compile(r"[\w-]+", re.UNICODE)
+LOGGER = structlog.get_logger(__name__)
 
 
 class EmbeddingProvider(Protocol):
@@ -103,6 +106,13 @@ class OpenAIEmbeddingProvider:
         }
         if self._model.startswith("text-embedding-3"):
             request["dimensions"] = self.dimension
+        LOGGER.info(
+            "embedding.request",
+            provider="openai",
+            model=self._model,
+            dimensions=self.dimension,
+            input_count=len(texts),
+        )
         response = await self._client.embeddings.create(**request)
         vectors = [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
         for vector in vectors:
@@ -110,6 +120,13 @@ class OpenAIEmbeddingProvider:
                 raise ValueError(
                     f"Embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
                 )
+        LOGGER.info(
+            "embedding.response",
+            provider="openai",
+            model=self._model,
+            dimensions=self.dimension,
+            vector_count=len(vectors),
+        )
         return vectors
 
 
