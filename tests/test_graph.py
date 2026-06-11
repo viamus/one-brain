@@ -559,8 +559,13 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
 
     assert ':root[data-theme="dark"]' in html
     assert 'id="nightMode" type="checkbox"' in html
+    assert 'class="legend-title">Legend</span>' in html
+    assert 'id="spread"' in html
     assert "document.documentElement.dataset.theme" in html
     assert "centroid_candidate" in html
     assert "grouping_opportunity" in html
+    assert "function edgeIsFocused(edge)" in html
+    assert "ctx.shadowBlur = 14" in html
+    assert "function layoutGraphPositions(nodes, rect)" in html
     assert "cancelAnimationFrame(animationFrameId)" in html
     assert "animationFrameId = requestAnimationFrame(tick)" in html

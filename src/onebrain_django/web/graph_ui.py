@@ -20,15 +20,19 @@ GRAPH_UI_HTML = """<!doctype html>
       --label: #182027;
       --muted: #64717d;
       --memory: #2d6f73;
+      --context: #315f9f;
       --skill: #7a5cbd;
       --workflow: #b36b27;
       --entity: #315f9f;
+      --fact: #4a7c96;
+      --note: #697783;
       --edge: #81909c;
       --correlation: #8d7b4d;
       --node-stroke: #ffffff;
       --centroid: #c78213;
       --grouping: #108e8c;
       --focus: #0b6bcb;
+      --focus-soft: rgba(11, 107, 203, 0.22);
       --danger: #b54137;
     }
 
@@ -45,15 +49,19 @@ GRAPH_UI_HTML = """<!doctype html>
       --label: #f2f6fa;
       --muted: #9aaabb;
       --memory: #45a27c;
+      --context: #7ea6de;
       --skill: #a78be7;
       --workflow: #df9448;
       --entity: #7ea6de;
+      --fact: #82b8c9;
+      --note: #8f9eac;
       --edge: #6f8294;
       --correlation: #d2ad55;
       --node-stroke: #111923;
       --centroid: #f0bd45;
       --grouping: #28beb8;
       --focus: #5da7f0;
+      --focus-soft: rgba(93, 167, 240, 0.24);
       --danger: #ee786f;
     }
 
@@ -223,6 +231,7 @@ GRAPH_UI_HTML = """<!doctype html>
 
     .metrics {
       position: absolute;
+      z-index: 2;
       top: 12px;
       right: 12px;
       display: flex;
@@ -257,12 +266,12 @@ GRAPH_UI_HTML = """<!doctype html>
 
     .legend {
       position: absolute;
+      z-index: 3;
+      top: 12px;
       left: 12px;
-      bottom: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      max-width: min(640px, calc(100% - 24px));
+      display: grid;
+      gap: 7px;
+      width: min(280px, calc(100% - 24px));
       padding: 8px 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -270,6 +279,18 @@ GRAPH_UI_HTML = """<!doctype html>
       color: var(--muted);
       font-size: 12px;
       backdrop-filter: blur(8px);
+    }
+
+    .legend-title {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .legend-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
     }
 
     .legend-item {
@@ -312,8 +333,20 @@ GRAPH_UI_HTML = """<!doctype html>
 
     @media (max-width: 980px) {
       .metrics {
-        left: 12px;
-        right: auto;
+        right: 12px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .metrics {
+        top: auto;
+        right: 12px;
+        bottom: 12px;
+      }
+
+      .metric {
+        min-width: 76px;
+        padding: 8px 9px;
       }
     }
   </style>
@@ -362,6 +395,7 @@ GRAPH_UI_HTML = """<!doctype html>
     </label>
     <div class="toolbar-actions">
       <button class="primary" id="load">Load</button>
+      <button id="spread">Spread</button>
       <button id="fit">Fit</button>
     </div>
   </section>
@@ -374,14 +408,19 @@ GRAPH_UI_HTML = """<!doctype html>
         <div class="metric"><strong id="edgeCount">0</strong><span>Correlations</span></div>
         <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
       </section>
-      <div class="legend">
-        <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
-        <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
-        <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
-        <span class="legend-item"><span class="dot" style="background: var(--entity)"></span>Entity</span>
-        <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
-        <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
-        <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
+      <div class="legend" aria-label="Color legend">
+        <span class="legend-title">Legend</span>
+        <div class="legend-grid">
+          <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
+          <span class="legend-item"><span class="dot" style="background: var(--context)"></span>Context</span>
+          <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
+          <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
+          <span class="legend-item"><span class="dot" style="background: var(--fact)"></span>Fact</span>
+          <span class="legend-item"><span class="dot" style="background: var(--note)"></span>Note</span>
+          <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
+          <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
+          <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
+        </div>
       </div>
     </section>
   </main>
@@ -420,9 +459,9 @@ GRAPH_UI_HTML = """<!doctype html>
       entity: "--entity",
       rule: "--memory",
       decision: "--workflow",
-      context: "--entity",
-      note: "--muted",
-      fact: "--entity"
+      context: "--context",
+      note: "--note",
+      fact: "--fact"
     };
 
     function cssVar(name) {
@@ -500,13 +539,17 @@ GRAPH_UI_HTML = """<!doctype html>
         if (!response.ok) {
           throw new Error(await responseErrorMessage(response));
         }
+        const previousPositions = new Map(graph.nodes.map((node) => [
+          node.id,
+          { x: node.x, y: node.y, vx: node.vx, vy: node.vy }
+        ]));
         graph = await response.json();
-        hydrateGraph();
+        hydrateGraph(previousPositions);
         fitGraph();
         nodeCountEl.textContent = graph.nodes.length;
         edgeCountEl.textContent = graph.edges.length;
         memoryCountEl.textContent = graph.memory_count;
-        setStatus(`Loaded ${graph.edges.length} correlations`);
+        setLoadedStatus();
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -524,15 +567,23 @@ GRAPH_UI_HTML = """<!doctype html>
       return `${response.status} ${response.statusText}`;
     }
 
-    function hydrateGraph() {
+    function setLoadedStatus() {
+      const hidden = graph.omitted ? `; ${graph.omitted} raw file sections hidden` : "";
+      setStatus(`Loaded ${graph.edges.length} correlations${hidden}`);
+    }
+
+    function hydrateGraph(previousPositions = new Map()) {
       const rect = canvas.getBoundingClientRect();
-      const existing = new Map(graph.nodes.map((node) => [node.id, node]));
+      const layout = layoutGraphPositions(graph.nodes, rect);
       for (const node of graph.nodes) {
-        const previous = existing.get(node.id);
-        node.x = previous?.x ?? rect.width / 2 + (Math.random() - 0.5) * rect.width * 0.35;
-        node.y = previous?.y ?? rect.height / 2 + (Math.random() - 0.5) * rect.height * 0.35;
-        node.vx = 0;
-        node.vy = 0;
+        const previous = previousPositions.get(node.id);
+        const planned = layout.get(node.id) || { x: rect.width / 2, y: rect.height / 2 };
+        node.x = Number.isFinite(previous?.x) ? previous.x : planned.x;
+        node.y = Number.isFinite(previous?.y) ? previous.y : planned.y;
+        node.vx = Number.isFinite(previous?.vx) ? previous.vx * 0.2 : 0;
+        node.vy = Number.isFinite(previous?.vy) ? previous.vy * 0.2 : 0;
+        node.anchorX = planned.anchorX;
+        node.anchorY = planned.anchorY;
         node.radius = nodeRadius(node);
         node.degree = 0;
       }
@@ -544,7 +595,66 @@ GRAPH_UI_HTML = """<!doctype html>
         edge.sourceNode.degree += 1;
         edge.targetNode.degree += 1;
       }
+      selected = null;
+      hover = null;
       startSimulation();
+    }
+
+    function layoutGraphPositions(nodes, rect) {
+      const groups = new Map();
+      for (const node of nodes) {
+        const key = layoutGroup(node);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(node);
+      }
+
+      const sortedGroups = Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right));
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const clusterRing = Math.max(210, Math.min(560, 150 + Math.sqrt(Math.max(1, nodes.length)) * 32));
+      const positions = new Map();
+
+      sortedGroups.forEach(([key, groupNodes], groupIndex) => {
+        const singleGroup = sortedGroups.length === 1;
+        const groupAngle = singleGroup
+          ? -Math.PI / 2
+          : -Math.PI / 2 + (Math.PI * 2 * groupIndex) / sortedGroups.length;
+        const anchorX = centerX + (singleGroup ? 0 : Math.cos(groupAngle) * clusterRing);
+        const anchorY = centerY + (singleGroup ? 0 : Math.sin(groupAngle) * clusterRing * 0.72);
+        const localRing = Math.max(70, Math.min(230, 46 + Math.sqrt(groupNodes.length) * 26));
+        const ordered = [...groupNodes].sort((left, right) => stableHash(left.id) - stableHash(right.id));
+
+        ordered.forEach((node, nodeIndex) => {
+          const seed = stableHash(`${key}:${node.id}`);
+          const localAngle = -Math.PI / 2 + (Math.PI * 2 * nodeIndex) / Math.max(1, ordered.length);
+          const jitter = ((seed % 100) / 100 - 0.5) * 28;
+          const distance = ordered.length === 1 ? 0 : localRing + jitter;
+          positions.set(node.id, {
+            x: anchorX + Math.cos(localAngle) * distance,
+            y: anchorY + Math.sin(localAngle) * distance * 0.78,
+            anchorX,
+            anchorY
+          });
+        });
+      });
+
+      return positions;
+    }
+
+    function layoutGroup(node) {
+      const role = graphRole(node);
+      if (role === "centroid_candidate") return "01-centroid";
+      if (role === "grouping_opportunity") return "02-grouping";
+      return `${node.node_type}:${node.subtype || "memory"}`;
+    }
+
+    function stableHash(value) {
+      let hash = 0;
+      const text = String(value || "");
+      for (let index = 0; index < text.length; index += 1) {
+        hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+      }
+      return hash;
     }
 
     function nodeRadius(node) {
@@ -584,8 +694,8 @@ GRAPH_UI_HTML = """<!doctype html>
           const b = nodes[j];
           const dx = b.x - a.x;
           const dy = b.y - a.y;
-          const distSq = Math.max(80, dx * dx + dy * dy);
-          const force = 420 / distSq;
+          const distSq = Math.max(100, dx * dx + dy * dy);
+          const force = 2600 / distSq;
           const dist = Math.sqrt(distSq);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
@@ -593,6 +703,17 @@ GRAPH_UI_HTML = """<!doctype html>
           a.fy -= fy;
           b.fx += fx;
           b.fy += fy;
+
+          const separation = a.radius + b.radius + 34;
+          if (dist < separation) {
+            const collision = (separation - dist) * 0.045;
+            const cx = (dx / dist) * collision;
+            const cy = (dy / dist) * collision;
+            a.fx -= cx;
+            a.fy -= cy;
+            b.fx += cx;
+            b.fy += cy;
+          }
         }
       }
 
@@ -602,8 +723,9 @@ GRAPH_UI_HTML = """<!doctype html>
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const desired = edge.edge_type === "correlation" ? 140 : 105;
-        const force = (dist - desired) * 0.004 * Math.max(0.4, edge.weight || 1);
+        const desired = edge.edge_type === "correlation" ? 225 : 165;
+        const weight = Math.max(0.35, Math.min(1.35, edge.weight || 1));
+        const force = (dist - desired) * 0.0026 * weight;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.fx += fx;
@@ -617,13 +739,49 @@ GRAPH_UI_HTML = """<!doctype html>
       const centerY = (rect.height / 2 - transform.y) / transform.scale;
       for (const node of nodes) {
         if (node === dragging) continue;
-        node.fx += (centerX - node.x) * 0.002;
-        node.fy += (centerY - node.y) * 0.002;
-        node.vx = (node.vx + node.fx) * 0.82;
-        node.vy = (node.vy + node.fy) * 0.82;
+        if (Number.isFinite(node.anchorX) && Number.isFinite(node.anchorY)) {
+          node.fx += (node.anchorX - node.x) * 0.0009;
+          node.fy += (node.anchorY - node.y) * 0.0009;
+        }
+        node.fx += (centerX - node.x) * 0.00035;
+        node.fy += (centerY - node.y) * 0.00035;
+        node.vx = clamp((node.vx + node.fx) * 0.86, -7, 7);
+        node.vy = clamp((node.vy + node.fy) * 0.86, -7, 7);
         node.x += node.vx;
         node.y += node.vy;
       }
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function activeFocusItem() {
+      return selected || hover;
+    }
+
+    function edgeIsFocused(edge) {
+      const item = activeFocusItem();
+      if (!item) return false;
+      if (item.node_type) {
+        return edge.sourceNode === item || edge.targetNode === item;
+      }
+      return edge === item;
+    }
+
+    function nodeIsFocused(node) {
+      const item = activeFocusItem();
+      if (!item) return false;
+      if (item.node_type) {
+        if (node === item) return true;
+        return graph.edges.some((edge) => edgeIsFocused(edge) && (edge.sourceNode === node || edge.targetNode === node));
+      }
+      return item.sourceNode === node || item.targetNode === node;
+    }
+
+    function nodeIsPrimaryFocus(node) {
+      const item = activeFocusItem();
+      return Boolean(item?.node_type && item === node);
     }
 
     function draw() {
@@ -635,7 +793,12 @@ GRAPH_UI_HTML = """<!doctype html>
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.scale, transform.scale);
 
-      for (const edge of graph.edges) drawEdge(edge);
+      for (const edge of graph.edges) {
+        if (!edgeIsFocused(edge)) drawEdge(edge);
+      }
+      for (const edge of graph.edges) {
+        if (edgeIsFocused(edge)) drawEdge(edge);
+      }
       for (const node of graph.nodes) drawNode(node);
 
       ctx.restore();
@@ -645,35 +808,58 @@ GRAPH_UI_HTML = """<!doctype html>
       const a = edge.sourceNode;
       const b = edge.targetNode;
       if (!a || !b) return;
+      const focused = edgeIsFocused(edge);
+      const dimmed = Boolean(activeFocusItem()) && !focused;
       ctx.save();
-      ctx.globalAlpha = edge === selected || edge === hover ? 0.95 : 0.42;
-      ctx.strokeStyle = edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
-      ctx.lineWidth = edge === selected || edge === hover ? 2.2 : Math.max(0.7, edge.weight || 1);
+      ctx.globalAlpha = dimmed ? 0.12 : focused ? 0.98 : 0.38;
+      ctx.strokeStyle = focused ? cssVar("--focus") : edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
+      ctx.lineWidth = focused ? 3.2 : Math.max(0.7, edge.weight || 1);
+      if (focused) {
+        ctx.shadowColor = cssVar("--focus");
+        ctx.shadowBlur = 14;
+      }
       ctx.setLineDash(edge.edge_type === "correlation" ? [5, 5] : []);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
+      if (focused) {
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
     function drawNode(node) {
       const color = nodeColor(node);
       const role = graphRole(node);
-      const active = node === selected || node === hover;
+      const primary = nodeIsPrimaryFocus(node);
+      const focused = nodeIsFocused(node);
+      const dimmed = Boolean(activeFocusItem()) && !focused;
       ctx.save();
+      if (primary || focused) {
+        ctx.shadowColor = primary ? cssVar("--focus") : cssVar("--focus-soft");
+        ctx.shadowBlur = primary ? 20 : 10;
+      }
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
       ctx.fillStyle = color;
-      ctx.globalAlpha = active ? 1 : 0.9;
+      ctx.globalAlpha = dimmed ? 0.32 : primary ? 1 : focused ? 0.96 : 0.88;
       ctx.fill();
-      ctx.lineWidth = active ? 3 : 1;
-      ctx.strokeStyle = active ? cssVar("--ink") : cssVar("--node-stroke");
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = primary ? 3.2 : focused ? 2.2 : 1;
+      ctx.strokeStyle = primary ? cssVar("--focus") : focused ? cssVar("--ink") : cssVar("--node-stroke");
       ctx.stroke();
 
       if (role) {
-        ctx.globalAlpha = active ? 1 : 0.88;
-        ctx.lineWidth = active ? 3.2 : 2.3;
+        ctx.globalAlpha = dimmed ? 0.26 : primary ? 1 : 0.88;
+        ctx.lineWidth = primary ? 3.2 : 2.3;
         ctx.strokeStyle = graphRoleColor(role);
         ctx.setLineDash(role === "grouping_opportunity" ? [5, 4] : []);
         ctx.beginPath();
@@ -681,20 +867,20 @@ GRAPH_UI_HTML = """<!doctype html>
         ctx.stroke();
         ctx.setLineDash([]);
         if (role === "centroid_candidate") {
-          ctx.globalAlpha = active ? 0.55 : 0.35;
+          ctx.globalAlpha = primary ? 0.55 : dimmed ? 0.18 : 0.35;
           ctx.beginPath();
           ctx.arc(node.x, node.y, node.radius + 8, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
 
-      if (transform.scale > 0.55 || active) {
-        ctx.font = active ? "700 12px Inter, sans-serif" : "600 11px Inter, sans-serif";
+      if (transform.scale > 0.55 || focused) {
+        ctx.font = primary ? "700 12px Inter, sans-serif" : "600 11px Inter, sans-serif";
         ctx.fillStyle = cssVar("--label");
-        ctx.globalAlpha = active ? 1 : 0.84;
+        ctx.globalAlpha = dimmed ? 0.34 : primary ? 1 : 0.84;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        wrapLabel(node.label, node.x, node.y + node.radius + 4, active ? 140 : 100);
+        wrapLabel(node.label, node.x, node.y + node.radius + 4, primary ? 140 : 100);
       }
       ctx.restore();
     }
@@ -729,15 +915,34 @@ GRAPH_UI_HTML = """<!doctype html>
       const maxX = Math.max(...xs);
       const minY = Math.min(...ys);
       const maxY = Math.max(...ys);
-      const width = Math.max(1, maxX - minX + 160);
-      const height = Math.max(1, maxY - minY + 160);
-      const scale = Math.min(1.6, Math.max(0.25, Math.min(rect.width / width, rect.height / height)));
+      const padding = Math.max(220, Math.min(rect.width, rect.height) * 0.18);
+      const width = Math.max(1, maxX - minX + padding);
+      const height = Math.max(1, maxY - minY + padding);
+      const scale = Math.min(1.15, Math.max(0.18, Math.min(rect.width / width, rect.height / height)));
       transform = {
         scale,
         x: rect.width / 2 - ((minX + maxX) / 2) * scale,
         y: rect.height / 2 - ((minY + maxY) / 2) * scale
       };
       draw();
+    }
+
+    function spreadGraph() {
+      if (!graph.nodes.length) return;
+      const rect = canvas.getBoundingClientRect();
+      const layout = layoutGraphPositions(graph.nodes, rect);
+      for (const node of graph.nodes) {
+        const planned = layout.get(node.id);
+        if (!planned) continue;
+        node.x = planned.x;
+        node.y = planned.y;
+        node.anchorX = planned.anchorX;
+        node.anchorY = planned.anchorY;
+        node.vx = 0;
+        node.vy = 0;
+      }
+      startSimulation();
+      fitGraph();
     }
 
     function screenToWorld(point) {
@@ -784,7 +989,8 @@ GRAPH_UI_HTML = """<!doctype html>
     function selectItem(item) {
       selected = item;
       if (!item) {
-        setStatus(`Loaded ${graph.edges.length} correlations`);
+        setLoadedStatus();
+        draw();
         return;
       }
       if (item.node_type) {
@@ -793,12 +999,14 @@ GRAPH_UI_HTML = """<!doctype html>
         const graphStats = item.metadata?.graph || {};
         const degree = graphStats.degree ? ` (${graphStats.degree} links)` : "";
         setStatus(roleLabel ? `${item.label} - ${roleLabel}${degree}` : `${item.label}${degree}`);
+        draw();
         return;
       }
       const shared = item.metadata?.shared_entities || [];
       const facets = item.metadata?.shared_facets || [];
       const reasons = shared.length ? shared : facets;
       setStatus(reasons.length ? `Correlation: ${reasons.slice(0, 3).join(", ")}` : "Correlation");
+      draw();
     }
 
     function applyTheme() {
@@ -846,6 +1054,13 @@ GRAPH_UI_HTML = """<!doctype html>
       lastPointer = null;
     });
 
+    canvas.addEventListener("pointerleave", () => {
+      if (!selected) {
+        hover = null;
+        draw();
+      }
+    });
+
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
       const rect = canvas.getBoundingClientRect();
@@ -859,6 +1074,7 @@ GRAPH_UI_HTML = """<!doctype html>
     }, { passive: false });
 
     document.getElementById("load").addEventListener("click", loadGraph);
+    document.getElementById("spread").addEventListener("click", spreadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
     includeVectorEl.addEventListener("change", loadGraph);
     nightModeEl.addEventListener("change", applyTheme);
