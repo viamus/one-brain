@@ -46,7 +46,7 @@ services:
     command: ["alembic", "upgrade", "head"]
     restart: "no"
 
-  django-web:
+  onebrain-api:
     build: .
     depends_on:
       postgres:
@@ -60,8 +60,8 @@ services:
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
       ONEBRAIN_QDRANT_URL: http://qdrant:6333
-      DJANGO_SETTINGS_MODULE: onebrain_django.settings
-      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,django-web,0.0.0.0
+      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-api,0.0.0.0
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
@@ -73,14 +73,12 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
-      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
-      ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
     ports:
-      - "127.0.0.1:${ONEBRAIN_HTTP_PORT:-8088}:8000"
+      - "127.0.0.1:${ONEBRAIN_API_PORT:-8088}:8000"
     volumes:
       - C:/DoxieOS:/mnt/doxie:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
-    command: ["onebrain-django"]
+    command: ["onebrain-api"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
@@ -88,7 +86,7 @@ services:
       timeout: 5s
       retries: 5
 
-  graph-aggregation-job:
+  onebrain-web:
     build: .
     depends_on:
       postgres:
@@ -102,7 +100,77 @@ services:
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
       ONEBRAIN_QDRANT_URL: http://qdrant:6333
-      DJANGO_SETTINGS_MODULE: onebrain_django.settings
+      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-web,0.0.0.0
+      ONEBRAIN_DJANGO_DEBUG: "true"
+      ONEBRAIN_DJANGO_HOST: 0.0.0.0
+      ONEBRAIN_DJANGO_PORT: 8000
+      ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON: '${ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON:-{"catalog":"private-engineering-catalog","source":"github-private-catalog"}}'
+      ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS: ${ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS:-3600}
+      ONEBRAIN_GRAPH_AGGREGATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_LIMIT:-500}
+      ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT:-750}
+      ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE: ${ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE:-12}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
+      ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+    ports:
+      - "127.0.0.1:${ONEBRAIN_WEB_PORT:-8089}:8000"
+    volumes:
+      - onebrain_job_status:/var/lib/onebrain/jobs
+    command: ["onebrain-web"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  onebrain-mcp:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
+      ONEBRAIN_QDRANT_URL: http://qdrant:6333
+      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      ONEBRAIN_DJANGO_HOST: 0.0.0.0
+      ONEBRAIN_DJANGO_PORT: 8000
+      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
+      ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
+    ports:
+      - "127.0.0.1:${ONEBRAIN_MCP_PORT:-8090}:8000"
+    volumes:
+      - C:/DoxieOS:/mnt/doxie:ro
+    command: ["onebrain-mcp-http"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  onebrain-jobs:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
+      ONEBRAIN_QDRANT_URL: http://qdrant:6333
+      DJANGO_SETTINGS_MODULE: onebrain_host.settings
       ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON: '${ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON:-{"catalog":"private-engineering-catalog","source":"github-private-catalog"}}'
       ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS: ${ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS:-3600}
       ONEBRAIN_GRAPH_AGGREGATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_LIMIT:-500}
@@ -113,7 +181,7 @@ services:
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
     volumes:
       - onebrain_job_status:/var/lib/onebrain/jobs
-    command: ["onebrain-django", "run_scheduled_jobs", "--job", "graph-aggregation"]
+    command: ["onebrain-jobs", "run_scheduled_jobs", "--job", "graph-aggregation"]
     restart: unless-stopped
 
 volumes:

@@ -5,5 +5,5 @@ from django.apps import AppConfig
 
 class OneBrainWebConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "onebrain_django.web"
+    name = "onebrain_web"
     verbose_name = "OneBrain Web"

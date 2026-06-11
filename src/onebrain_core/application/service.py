@@ -47,8 +47,8 @@ from onebrain_core.contracts.schemas import (
     SearchResponse,
     SourceRef,
 )
-from onebrain_core.infrastructure.embeddings import EmbeddingProvider
-from onebrain_core.infrastructure.models import (
+from onebrain_infra.embeddings import EmbeddingProvider
+from onebrain_infra.models import (
     AuditEvent,
     Entity,
     Memory,
@@ -56,7 +56,7 @@ from onebrain_core.infrastructure.models import (
     MemoryLink,
     Relation,
 )
-from onebrain_core.infrastructure.vector_store import QdrantMemoryStore
+from onebrain_infra.vector_store import QdrantMemoryStore
 
 LOGGER = structlog.get_logger(__name__)
 
@@ -638,7 +638,7 @@ class OneBrainService:
         self,
         request: GraphAggregationRequest,
         *,
-        actor: str = "graph-aggregation-job",
+        actor: str = "onebrain-jobs",
     ) -> GraphAggregationResponse:
         graph_request = request.graph.model_copy(
             update={

@@ -9,8 +9,8 @@ from typing import Any
 from django.conf import settings
 
 from onebrain_core.contracts.schemas import GraphAggregationResponse
-from onebrain_django.jobs.graph_aggregation import GraphAggregationJobConfig
-from onebrain_django.jobs.scheduler import ScheduledJobConfig
+from onebrain_jobs.graph_aggregation import GraphAggregationJobConfig
+from onebrain_jobs.scheduler import ScheduledJobConfig
 
 JOB_NAME_GRAPH_AGGREGATION = "graph-aggregation"
 
@@ -159,7 +159,7 @@ def graph_aggregation_status_response(
     return {
         "job": JOB_NAME_GRAPH_AGGREGATION,
         "status": status,
-        "command": "onebrain-django run_scheduled_jobs --job graph-aggregation",
+        "command": "onebrain-jobs run_scheduled_jobs --job graph-aggregation",
         "scheduler": scheduler_payload,
         "configuration": config_payload,
         "last_run": last_run,

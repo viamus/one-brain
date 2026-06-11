@@ -19,8 +19,8 @@ from onebrain_core.contracts.schemas import (
     SearchHit,
     SearchRequest,
 )
-from onebrain_core.infrastructure.models import Entity, Memory
-from onebrain_django.web.graph_ui import graph_view_html
+from onebrain_infra.models import Entity, Memory
+from onebrain_web.graph_ui import graph_view_html
 
 
 def test_graph_request_normalizes_blank_query() -> None:

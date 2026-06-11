@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from starlette.routing import Mount
 
-from onebrain_django.asgi import build_application
+from onebrain_host.asgi import build_application
 
 
 def test_django_asgi_mounts_mcp_and_django_apps() -> None:

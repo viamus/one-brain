@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from onebrain_core.application.service import OneBrainService
 from onebrain_core.common.config import Settings
-from onebrain_core.infrastructure.database import create_session_factory
-from onebrain_core.infrastructure.embeddings import build_embedding_provider
-from onebrain_core.infrastructure.vector_store import QdrantMemoryStore
+from onebrain_infra.database import create_session_factory
+from onebrain_infra.embeddings import build_embedding_provider
+from onebrain_infra.vector_store import QdrantMemoryStore
 
 
 def build_service(settings: Settings, engine: AsyncEngine) -> OneBrainService:

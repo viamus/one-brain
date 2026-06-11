@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from django.core.management.base import BaseCommand, CommandError
 
 from onebrain_core.contracts.schemas import GraphAggregationResponse
-from onebrain_django.jobs.graph_aggregation import (
+from onebrain_jobs.graph_aggregation import (
     GraphAggregationJob,
     GraphAggregationJobConfig,
     add_graph_aggregation_arguments,
     format_graph_aggregation_result,
 )
-from onebrain_django.jobs.scheduler import ScheduledJobConfig, run_scheduled_job
-from onebrain_django.jobs.status import (
+from onebrain_jobs.scheduler import ScheduledJobConfig, run_scheduled_job
+from onebrain_jobs.status import (
     JOB_NAME_GRAPH_AGGREGATION,
     failed_status_payload,
     finished_status_payload,

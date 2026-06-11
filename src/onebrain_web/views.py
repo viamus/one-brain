@@ -4,27 +4,15 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from onebrain_core.contracts.schemas import GraphRequest
-from onebrain_django.http import (
-    error_response,
+from onebrain_host.http import (
     json_response,
     maybe_await,
     parse_body_or_error,
     validate_payload,
 )
-from onebrain_django.runtime import get_runtime_service
-from onebrain_django.web.console_ui import console_view_html
-from onebrain_django.web.graph_ui import graph_view_html
-
-
-async def healthz(_request: HttpRequest) -> JsonResponse:
-    return json_response({"status": "ok"})
-
-
-async def readyz(_request: HttpRequest) -> JsonResponse:
-    try:
-        return json_response(await maybe_await(get_runtime_service().health()))
-    except Exception as exc:
-        return error_response(str(exc), status=503)
+from onebrain_host.runtime import get_runtime_service
+from onebrain_web.console_ui import console_view_html
+from onebrain_web.graph_ui import graph_view_html
 
 
 async def graph_view(_request: HttpRequest) -> HttpResponse:

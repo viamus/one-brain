@@ -12,7 +12,7 @@ from onebrain_core.contracts.schemas import (
     GraphRequest,
     SearchFilters,
 )
-from onebrain_django.runtime import close_runtime, get_runtime_service
+from onebrain_host.runtime import close_runtime, get_runtime_service
 
 RuntimeCloser = Callable[[], Awaitable[None]]
 ServiceFactory = Callable[[], Any]

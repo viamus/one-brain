@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from onebrain_django.api import views
+from onebrain_api import views
 
 app_name = "onebrain_api"
 

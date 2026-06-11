@@ -7,8 +7,8 @@ from django.test import Client
 
 from onebrain_core.common.config import Settings
 from onebrain_core.contracts.schemas import GraphResponse, SearchResponse
-from onebrain_django.jobs.status import JOB_NAME_GRAPH_AGGREGATION, write_job_status
-from onebrain_django.runtime import clear_runtime_overrides, set_runtime_overrides
+from onebrain_host.runtime import clear_runtime_overrides, set_runtime_overrides
+from onebrain_jobs.status import JOB_NAME_GRAPH_AGGREGATION, write_job_status
 
 API_PREFIX = "/api/v1"
 
@@ -67,7 +67,7 @@ def test_django_openapi_json_is_public_and_describes_secured_api() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["openapi"] == "3.1.0"
-    assert payload["info"]["title"] == "OneBrain Django API"
+    assert payload["info"]["title"] == "OneBrain API"
     assert "/api/v1/search" in payload["paths"]
     assert "/api/v1/graph" in payload["paths"]
     assert "/api/v1/jobs/graph-aggregation/status" in payload["paths"]

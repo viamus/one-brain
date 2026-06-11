@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from onebrain_core.common.config import get_settings
-from onebrain_core.infrastructure.models import Base
+from onebrain_infra.models import Base
 
 config = context.config
 
