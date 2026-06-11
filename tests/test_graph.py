@@ -1013,8 +1013,9 @@ def test_graph_view_html_exposes_correlation_controls() -> None:
     assert 'id="includeGroupingOpportunities" type="checkbox" checked' in html
     assert 'id="correlationLimit" type="number" min="0" max="2000"' in html
     assert 'id="maxDegree" type="number" min="1" max="50"' in html
-    assert 'id="menuToggle"' in html
+    assert 'id="menuToggle"' not in html
     assert 'id="graphMenu"' in html
+    assert 'id="groupAccordion"' in html
     assert "include_vector_correlations: includeVectorEl.checked" in html
     assert "include_grouping_opportunities: includeGroupingEl.checked" in html
     assert "correlation_limit: Number(correlationLimitEl.value || 250)" in html
@@ -1032,6 +1033,7 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     assert "#eef2f5" not in html
     assert 'id="nightMode" type="checkbox"' in html
     assert 'class="legend legend-horizontal"' in html
+    assert 'class="metrics top-metrics"' in html
     assert 'class="legend-title">Legend</span>' in html
     assert 'id="spread"' in html
     assert "document.documentElement.dataset.theme" in html
@@ -1040,6 +1042,9 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     assert "Grouping Opportunities" in html
     assert 'id="groupEmpty"' in html
     assert "grouping_opportunities" in html
+    assert "function shouldDrawLabel(node, focused, primary)" in html
+    assert "ResizeObserver" in html
+    assert "scheduleViewportRefresh({ fit: true })" in html
     assert "function edgeIsFocused(edge)" in html
     assert "ctx.shadowBlur = 14" in html
     assert "function layoutGraphPositions(nodes, rect)" in html

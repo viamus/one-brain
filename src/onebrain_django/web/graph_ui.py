@@ -66,9 +66,9 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     header {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto minmax(180px, 0.62fr);
       align-items: center;
-      justify-content: space-between;
       gap: 16px;
       min-height: 56px;
       padding: 10px 18px;
@@ -82,13 +82,6 @@ GRAPH_UI_HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 10px;
-    }
-
-    .menu-toggle {
-      min-width: 72px;
-      border-color: color-mix(in srgb, var(--ob-tigerlily) 22%, var(--line));
-      background: color-mix(in srgb, var(--ob-tigerlily) 8%, var(--control));
-      color: var(--ob-text);
     }
 
     h1 {
@@ -117,10 +110,6 @@ GRAPH_UI_HTML = """<!doctype html>
       transition: grid-template-columns 160ms ease;
     }
 
-    body[data-menu-collapsed="true"] .graph-shell {
-      grid-template-columns: 56px minmax(0, 1fr);
-    }
-
     .graph-menu {
       min-width: 0;
       min-height: 0;
@@ -138,28 +127,6 @@ GRAPH_UI_HTML = """<!doctype html>
       gap: 10px;
       padding: 12px;
       overflow: auto;
-    }
-
-    .menu-collapsed-label {
-      display: none;
-      position: absolute;
-      inset: 12px 0 auto;
-      color: var(--ob-muted);
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-align: center;
-      text-transform: uppercase;
-      writing-mode: vertical-rl;
-      justify-self: center;
-    }
-
-    body[data-menu-collapsed="true"] .menu-content {
-      display: none;
-    }
-
-    body[data-menu-collapsed="true"] .menu-collapsed-label {
-      display: block;
     }
 
     .menu-section {
@@ -305,10 +272,6 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .metrics {
-      position: absolute;
-      z-index: 2;
-      top: 12px;
-      right: 12px;
       display: flex;
       overflow: hidden;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
@@ -316,6 +279,12 @@ GRAPH_UI_HTML = """<!doctype html>
       background: var(--panel-float);
       backdrop-filter: blur(8px);
       box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+    }
+
+    .top-metrics {
+      justify-self: center;
+      box-shadow: none;
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
     }
 
     .metric {
@@ -350,6 +319,7 @@ GRAPH_UI_HTML = """<!doctype html>
       align-items: center;
       gap: 12px;
       width: auto;
+      max-width: calc(100% - 24px);
       padding: 8px 10px;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       border-radius: var(--ob-radius-panel);
@@ -360,24 +330,45 @@ GRAPH_UI_HTML = """<!doctype html>
       box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
     }
 
-    .group-panel {
-      position: static;
-      z-index: auto;
+    .group-accordion {
       display: grid;
       gap: 8px;
       width: 100%;
-      max-height: none;
-      overflow: visible;
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      backdrop-filter: none;
-      box-shadow: none;
+      min-height: 0;
     }
 
-    .group-panel[hidden] {
+    .group-accordion summary {
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    .group-accordion summary::-webkit-details-marker {
       display: none;
+    }
+
+    .group-accordion summary::after {
+      content: "+";
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+      border-radius: var(--ob-radius-compact);
+      color: var(--muted);
+    }
+
+    .group-accordion[open] summary::after {
+      content: "-";
+      color: var(--ob-tigerlily);
     }
 
     .group-panel-head {
@@ -385,9 +376,9 @@ GRAPH_UI_HTML = """<!doctype html>
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      color: var(--ink);
+      color: var(--muted);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 720;
     }
 
     .group-list {
@@ -497,11 +488,11 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     @media (max-width: 980px) {
-      .graph-shell {
+      header {
         grid-template-columns: 1fr;
       }
 
-      body[data-menu-collapsed="true"] .graph-shell {
+      .graph-shell {
         grid-template-columns: 1fr;
       }
 
@@ -510,12 +501,8 @@ GRAPH_UI_HTML = """<!doctype html>
         border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
       }
 
-      body[data-menu-collapsed="true"] .graph-menu {
-        display: none;
-      }
-
       .metrics {
-        right: 12px;
+        justify-self: stretch;
       }
 
       .canvas-shell {
@@ -524,11 +511,6 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     @media (max-width: 760px) {
-      header {
-        align-items: stretch;
-        flex-direction: column;
-      }
-
       .status {
         max-width: none;
         text-align: left;
@@ -540,9 +522,7 @@ GRAPH_UI_HTML = """<!doctype html>
       }
 
       .metrics {
-        top: auto;
-        right: 12px;
-        bottom: 12px;
+        width: 100%;
       }
 
       .metric {
@@ -552,18 +532,22 @@ GRAPH_UI_HTML = """<!doctype html>
     }
   </style>
 </head>
-<body data-menu-collapsed="false">
+<body>
   <header>
     <div class="header-main">
-      <button class="menu-toggle" id="menuToggle" type="button" aria-controls="graphMenu" aria-expanded="true">Collapse</button>
       <h1>OneBrain Correlations</h1>
     </div>
+    <section class="metrics top-metrics" aria-label="Graph metrics">
+      <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
+      <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
+      <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
+      <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
+    </section>
     <div class="status" id="status">Idle</div>
   </header>
 
   <main class="graph-shell">
     <aside class="graph-menu" id="graphMenu">
-      <div class="menu-collapsed-label">Menu</div>
       <div class="menu-content">
         <section class="menu-section toolbar" aria-label="Correlation filters">
           <span class="menu-section-title">Filters</span>
@@ -619,14 +603,19 @@ GRAPH_UI_HTML = """<!doctype html>
 
         <section class="menu-section menu-section-groups">
           <span class="menu-section-title">Grouping Opportunities</span>
-          <div class="group-empty" id="groupEmpty">Load the graph to inspect detected aggregation candidates.</div>
-          <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
+          <details class="group-accordion" id="groupAccordion">
+            <summary>
+              <span>Aggregation candidates</span>
+              <strong id="groupPanelCount">0</strong>
+            </summary>
+            <div class="group-empty" id="groupEmpty">Load the graph to inspect detected aggregation candidates.</div>
+            <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
             <div class="group-panel-head">
               <span>Detected clusters</span>
-              <span id="groupPanelCount">0</span>
             </div>
             <div class="group-list" id="groupList"></div>
-          </section>
+            </section>
+          </details>
         </section>
       </div>
     </aside>
@@ -634,12 +623,6 @@ GRAPH_UI_HTML = """<!doctype html>
     <section class="workspace">
       <section class="canvas-shell">
         <canvas id="graph" aria-label="OneBrain correlation canvas"></canvas>
-        <section class="metrics" aria-label="Graph metrics">
-          <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
-          <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
-          <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
-          <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
-        </section>
         <div class="legend legend-horizontal" aria-label="Color legend">
           <span class="legend-title">Legend</span>
           <div class="legend-grid">
@@ -661,7 +644,7 @@ GRAPH_UI_HTML = """<!doctype html>
   <script>
     const canvas = document.getElementById("graph");
     const ctx = canvas.getContext("2d");
-    const menuToggleEl = document.getElementById("menuToggle");
+    const canvasShellEl = document.querySelector(".canvas-shell");
     const statusEl = document.getElementById("status");
     const nodeCountEl = document.getElementById("nodeCount");
     const edgeCountEl = document.getElementById("edgeCount");
@@ -694,6 +677,7 @@ GRAPH_UI_HTML = """<!doctype html>
     let animationFrameId = null;
     let simulationTicksRemaining = 0;
     let simulationStartedWithTicks = 0;
+    let viewportRefreshId = null;
     let palette = {};
 
     const colors = {
@@ -775,19 +759,22 @@ GRAPH_UI_HTML = """<!doctype html>
       draw();
     }
 
+    function scheduleViewportRefresh({ fit = true } = {}) {
+      if (viewportRefreshId !== null) {
+        cancelAnimationFrame(viewportRefreshId);
+      }
+      viewportRefreshId = requestAnimationFrame(() => {
+        viewportRefreshId = null;
+        resize();
+        if (fit && graph.nodes.length) {
+          fitGraph();
+        }
+      });
+    }
+
     function setStatus(value, isError = false) {
       statusEl.textContent = value;
       statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
-    }
-
-    function setMenuCollapsed(collapsed) {
-      document.body.dataset.menuCollapsed = String(collapsed);
-      menuToggleEl.textContent = collapsed ? "Menu" : "Collapse";
-      menuToggleEl.setAttribute("aria-expanded", String(!collapsed));
-      window.setTimeout(() => {
-        resize();
-        fitGraph();
-      }, 180);
     }
 
     function parseScope() {
@@ -836,7 +823,7 @@ GRAPH_UI_HTML = """<!doctype html>
         ]));
         graph = await response.json();
         hydrateGraph(previousPositions);
-        fitGraph();
+        scheduleViewportRefresh({ fit: true });
         nodeCountEl.textContent = graph.nodes.length;
         edgeCountEl.textContent = graph.edges.length;
         memoryCountEl.textContent = graph.memory_count;
@@ -893,6 +880,7 @@ GRAPH_UI_HTML = """<!doctype html>
       selected = null;
       hover = null;
       startSimulation();
+      scheduleViewportRefresh({ fit: true });
     }
 
     function renderGroupingOpportunities() {
@@ -1248,15 +1236,25 @@ GRAPH_UI_HTML = """<!doctype html>
         }
       }
 
-      if (transform.scale > 0.55 || focused) {
+      if (shouldDrawLabel(node, focused, primary)) {
         ctx.font = primary ? "760 12px Segoe UI, sans-serif" : "650 11px Segoe UI, sans-serif";
         ctx.fillStyle = cssVar("--label");
         ctx.globalAlpha = dimmed ? 0.34 : primary ? 1 : 0.84;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        wrapLabel(node.label, node.x, node.y + node.radius + 4, primary ? 140 : 100);
+        wrapLabel(node.label, node.x, node.y + node.radius + 4, primary ? 150 : role ? 126 : 104);
       }
       ctx.restore();
+    }
+
+    function shouldDrawLabel(node, focused, primary) {
+      if (primary || focused) return true;
+      const role = graphRole(node);
+      if (role === "grouping_opportunity" || role === "centroid_candidate") return true;
+      const nodeCount = graph.nodes.length;
+      if (nodeCount > 130) return transform.scale > 1.25 && node.degree >= 3;
+      if (nodeCount > 70) return transform.scale > 1.05 && node.degree >= 2;
+      return transform.scale > 0.82;
     }
 
     function wrapLabel(label, x, y, maxWidth) {
@@ -1461,9 +1459,6 @@ GRAPH_UI_HTML = """<!doctype html>
       draw();
     }, { passive: false });
 
-    menuToggleEl.addEventListener("click", () => {
-      setMenuCollapsed(document.body.dataset.menuCollapsed !== "true");
-    });
     document.getElementById("load").addEventListener("click", loadGraph);
     document.getElementById("spread").addEventListener("click", spreadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
@@ -1474,10 +1469,16 @@ GRAPH_UI_HTML = """<!doctype html>
       if (event.key === "Enter") loadGraph();
     });
 
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", () => scheduleViewportRefresh({ fit: graph.nodes.length > 0 }));
+    if ("ResizeObserver" in window && canvasShellEl) {
+      const canvasResizeObserver = new ResizeObserver(() => {
+        scheduleViewportRefresh({ fit: graph.nodes.length > 0 });
+      });
+      canvasResizeObserver.observe(canvasShellEl);
+    }
     nightModeEl.checked = true;
     applyTheme();
-    resize();
+    scheduleViewportRefresh({ fit: false });
     loadGraph();
   </script>
 </body>
