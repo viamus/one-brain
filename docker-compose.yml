@@ -61,11 +61,11 @@ services:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
       ONEBRAIN_QDRANT_URL: http://qdrant:6333
     ports:
-      - "${ONEBRAIN_HTTP_PORT:-8080}:8080"
-    command: ["uvicorn", "onebrain.api:app", "--host", "0.0.0.0", "--port", "8080"]
+      - "127.0.0.1:${ONEBRAIN_HTTP_PORT:-8088}:8080"
+    command: ["onebrain-api"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/readyz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -73,21 +73,29 @@ services:
   mcp-http:
     build: .
     depends_on:
-      api:
+      postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
-      ONEBRAIN_API_URL: http://api:8080
+      ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
+      ONEBRAIN_QDRANT_URL: http://qdrant:6333
       ONEBRAIN_MCP_HOST: 0.0.0.0
       ONEBRAIN_MCP_PORT: 8090
+      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
       ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
+    volumes:
+      - C:/DoxieOS:/mnt/doxie:ro
     ports:
       - "${ONEBRAIN_MCP_PORT:-8090}:8090"
     command: ["onebrain-mcp-http"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/readyz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

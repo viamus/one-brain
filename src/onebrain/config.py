@@ -18,11 +18,10 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "production"] = "local"
     log_level: str = "INFO"
     api_keys: str = ""
-    api_url: str = "http://localhost:8080"
-    api_key: str = ""
     mcp_host: str = "127.0.0.1"
     mcp_port: int = 8090
     mcp_require_api_key: bool = True
+    mcp_path_mappings: str = ""
 
     database_url: str = "postgresql+asyncpg://onebrain:onebrain@localhost:5432/onebrain"
 
@@ -42,13 +41,6 @@ class Settings(BaseSettings):
     @property
     def api_key_values(self) -> list[str]:
         return [item.strip() for item in self.api_keys.split(",") if item.strip()]
-
-    @property
-    def outbound_api_key(self) -> str:
-        if self.api_key.strip():
-            return self.api_key.strip()
-        values = self.api_key_values
-        return values[0] if values else ""
 
     @model_validator(mode="after")
     def validate_production_security(self) -> Settings:

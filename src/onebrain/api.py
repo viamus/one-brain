@@ -6,35 +6,31 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.responses import ORJSONResponse
-from sqlalchemy.ext.asyncio import AsyncEngine
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, ORJSONResponse
 
 from onebrain.config import Settings, get_settings
-from onebrain.db import create_engine, create_session_factory
-from onebrain.embeddings import build_embedding_provider
+from onebrain.db import create_engine
+from onebrain.graph_ui import graph_view_html
 from onebrain.logging import configure_logging
+from onebrain.runtime import build_service
 from onebrain.schemas import (
     ContextPack,
     ContextRequest,
     CorrelationRequest,
     CorrelationResponse,
+    GraphRequest,
+    GraphResponse,
     MemoryCreate,
     MemoryOut,
+    MemoryType,
+    SearchFilters,
     SearchRequest,
     SearchResponse,
+    SkillCreate,
 )
 from onebrain.service import OneBrainService
-from onebrain.vector_store import QdrantMemoryStore
-
-
-def _build_service(settings: Settings, engine: AsyncEngine) -> OneBrainService:
-    return OneBrainService(
-        settings=settings,
-        session_factory=create_session_factory(engine),
-        embeddings=build_embedding_provider(settings),
-        vector_store=QdrantMemoryStore(settings),
-    )
+from onebrain.skills import harden_skill_payload
 
 
 @asynccontextmanager
@@ -42,7 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     engine = create_engine(settings)
-    service = _build_service(settings, engine)
+    service = build_service(settings, engine)
     app.state.settings = settings
     app.state.engine = engine
     app.state.service = service
@@ -98,6 +94,11 @@ async def readyz(service: Annotated[OneBrainService, Depends(get_service)]) -> d
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.get("/graph", response_class=HTMLResponse)
+async def graph_view() -> HTMLResponse:
+    return HTMLResponse(graph_view_html())
+
+
 @app.post("/v1/memories", response_model=MemoryOut, dependencies=[Depends(require_api_key)])
 async def capture_memory(
     payload: MemoryCreate,
@@ -107,6 +108,39 @@ async def capture_memory(
         return await service.capture_memory(payload, actor="http")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/v1/skills", response_model=MemoryOut, dependencies=[Depends(require_api_key)])
+async def capture_skill(
+    payload: SkillCreate,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> MemoryOut:
+    try:
+        hardened = harden_skill_payload(payload.model_dump(mode="json"))
+        source_ref = hardened.payload.get("source", {}).get("source_ref")
+        if source_ref:
+            try:
+                return await service.get_memory_by_source_ref(str(source_ref))
+            except KeyError:
+                pass
+        return await service.capture_memory(
+            MemoryCreate.model_validate(hardened.payload), actor="http"
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/memories/by-source", response_model=MemoryOut, dependencies=[Depends(require_api_key)]
+)
+async def get_memory_by_source_ref(
+    source_ref: str,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> MemoryOut:
+    try:
+        return await service.get_memory_by_source_ref(source_ref)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get(
@@ -132,6 +166,48 @@ async def search(
     service: Annotated[OneBrainService, Depends(get_service)],
 ) -> SearchResponse:
     return await service.search(payload)
+
+
+@app.post(
+    "/v1/skills/search", response_model=SearchResponse, dependencies=[Depends(require_api_key)]
+)
+async def search_skills(
+    payload: SearchRequest,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> SearchResponse:
+    filters = payload.filters.model_copy(update={"memory_types": ["skill"]})
+    return await service.search(payload.model_copy(update={"filters": filters}))
+
+
+@app.post("/v1/graph", response_model=GraphResponse, dependencies=[Depends(require_api_key)])
+async def graph(
+    payload: GraphRequest,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> GraphResponse:
+    return await service.build_graph(payload)
+
+
+@app.post("/graph/data", response_model=GraphResponse)
+async def graph_data(
+    payload: GraphRequest,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> GraphResponse:
+    return await service.build_graph(payload)
+
+
+@app.get("/v1/graph", response_model=GraphResponse, dependencies=[Depends(require_api_key)])
+async def graph_query(
+    service: Annotated[OneBrainService, Depends(get_service)],
+    query: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    memory_type: MemoryType | None = None,
+    tag: str | None = None,
+) -> GraphResponse:
+    filters = SearchFilters(
+        memory_types=[memory_type] if memory_type else None,
+        tags=[tag] if tag else None,
+    )
+    return await service.build_graph(GraphRequest(query=query, limit=limit, filters=filters))
 
 
 @app.post("/v1/context", response_model=ContextPack, dependencies=[Depends(require_api_key)])
