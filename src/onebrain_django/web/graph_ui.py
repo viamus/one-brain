@@ -11,78 +11,57 @@ GRAPH_UI_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OneBrain Correlations</title>
   <style>
-    :root {
-      color-scheme: light;
-      --bg: #f6f7f8;
-      --canvas: #eef2f5;
-      --panel: #ffffff;
-      --panel-strong: #eef1f3;
-      --panel-float: rgba(255, 255, 255, 0.92);
-      --control: #ffffff;
-      --line: #d7dde2;
-      --ink: #182027;
-      --label: #182027;
-      --muted: #64717d;
-      --memory: #2d6f73;
-      --context: #315f9f;
-      --skill: #7a5cbd;
-      --workflow: #b36b27;
-      --entity: #315f9f;
-      --fact: #4a7c96;
-      --note: #697783;
-      --edge: #81909c;
-      --correlation: #8d7b4d;
-      --node-stroke: #ffffff;
-      --centroid: #c78213;
-      --grouping: #108e8c;
-      --grouping-soft: rgba(16, 142, 140, 0.12);
-      --focus: #0b6bcb;
-      --focus-soft: rgba(11, 107, 203, 0.22);
-      --danger: #b54137;
-    }
+    __ONEBRAIN_DESIGN_SYSTEM_CSS__
 
-    :root[data-theme="dark"] {
+    :root,
+    :root[data-theme="dark"],
+    :root[data-theme="light"] {
       color-scheme: dark;
-      --bg: #0b1117;
-      --canvas: #081018;
-      --panel: #111923;
-      --panel-strong: #16212d;
-      --panel-float: rgba(17, 25, 35, 0.92);
-      --control: #0d1520;
-      --line: #2a3949;
-      --ink: #edf3f7;
-      --label: #f2f6fa;
-      --muted: #9aaabb;
+      --bg: var(--ob-ink);
+      --canvas: #090a09;
+      --panel: var(--ob-panel);
+      --panel-strong: var(--ob-panel-raised);
+      --panel-float: rgba(18, 19, 17, 0.92);
+      --control: var(--ob-control);
+      --line: var(--ob-line);
+      --ink: var(--ob-text);
+      --label: var(--ob-text);
+      --muted: var(--ob-muted);
       --memory: #45a27c;
-      --context: #7ea6de;
-      --skill: #a78be7;
-      --workflow: #df9448;
-      --entity: #7ea6de;
+      --context: var(--ob-blue);
+      --skill: #b99df1;
+      --workflow: var(--ob-tigerlily);
+      --entity: var(--ob-blue);
       --fact: #82b8c9;
-      --note: #8f9eac;
-      --edge: #6f8294;
-      --correlation: #d2ad55;
-      --node-stroke: #111923;
-      --centroid: #f0bd45;
+      --note: #a9a39a;
+      --edge: #6f7569;
+      --correlation: var(--ob-yellow);
+      --node-stroke: var(--ob-panel);
+      --centroid: var(--ob-tigerlily);
       --grouping: #28beb8;
       --grouping-soft: rgba(40, 190, 184, 0.14);
-      --focus: #5da7f0;
-      --focus-soft: rgba(93, 167, 240, 0.24);
-      --danger: #ee786f;
+      --focus: var(--ob-tigerlily);
+      --focus-soft: rgba(217, 119, 87, 0.22);
+      --danger: var(--ob-red);
+      --graph-grid: rgba(242, 239, 231, 0.035);
+      --graph-grid-strong: rgba(217, 119, 87, 0.075);
+      --graph-vignette: rgba(217, 119, 87, 0.08);
+      --node-glint: rgba(242, 239, 231, 0.18);
     }
-
-    __ONEBRAIN_DESIGN_SYSTEM_CSS__
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 18% 0%, var(--graph-vignette), transparent 34rem),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18rem),
+        var(--bg);
       color: var(--ink);
       display: flex;
       flex-direction: column;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Inter, Roboto, Arial, sans-serif;
       letter-spacing: 0;
     }
 
@@ -93,15 +72,16 @@ GRAPH_UI_HTML = """<!doctype html>
       gap: 16px;
       min-height: 56px;
       padding: 10px 18px;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      background: color-mix(in srgb, var(--ob-ink-2) 94%, transparent);
+      backdrop-filter: blur(14px);
     }
 
     h1 {
       margin: 0;
       font-size: 18px;
       line-height: 1.2;
-      font-weight: 700;
+      font-weight: 780;
     }
 
     .status {
@@ -121,8 +101,9 @@ GRAPH_UI_HTML = """<!doctype html>
       align-items: end;
       gap: 10px;
       padding: 12px 18px;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel-strong);
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
+      box-shadow: inset 0 1px 0 rgba(242, 239, 231, 0.035);
     }
 
     .control {
@@ -156,7 +137,7 @@ GRAPH_UI_HTML = """<!doctype html>
       flex: 0 0 auto;
       padding: 6px 10px;
       border: 1px solid var(--line);
-      border-radius: 7px;
+      border-radius: var(--ob-radius-compact);
       background: var(--control);
       color: var(--ink);
       font-size: 13px;
@@ -183,7 +164,7 @@ GRAPH_UI_HTML = """<!doctype html>
     select,
     button {
       min-height: 34px;
-      border-radius: 7px;
+      border-radius: var(--ob-radius-compact);
       border: 1px solid var(--line);
       background: var(--control);
       color: var(--ink);
@@ -208,14 +189,14 @@ GRAPH_UI_HTML = """<!doctype html>
     button.primary {
       border-color: var(--focus);
       background: var(--focus);
-      color: #ffffff;
+      color: #151513;
     }
 
     button:focus,
     input:focus,
     select:focus {
-      outline: 2px solid rgba(11, 107, 203, 0.24);
-      outline-offset: 1px;
+      outline: 0;
+      box-shadow: var(--ob-shadow-focus);
     }
 
     .workspace {
@@ -227,7 +208,9 @@ GRAPH_UI_HTML = """<!doctype html>
       position: relative;
       min-width: 0;
       height: 100%;
-      background: var(--canvas);
+      background:
+        radial-gradient(circle at 28% 12%, rgba(217, 119, 87, 0.08), transparent 28rem),
+        var(--canvas);
       overflow: hidden;
     }
 
@@ -244,16 +227,17 @@ GRAPH_UI_HTML = """<!doctype html>
       right: 12px;
       display: flex;
       overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+      border-radius: var(--ob-radius-panel);
       background: var(--panel-float);
       backdrop-filter: blur(8px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
     }
 
     .metric {
       min-width: 92px;
       padding: 10px 12px;
-      border-right: 1px solid var(--line);
+      border-right: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
     }
 
     .metric:last-child { border-right: 0; }
@@ -281,12 +265,13 @@ GRAPH_UI_HTML = """<!doctype html>
       gap: 7px;
       width: min(280px, calc(100% - 24px));
       padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+      border-radius: var(--ob-radius-panel);
       background: var(--panel-float);
       color: var(--muted);
       font-size: 12px;
       backdrop-filter: blur(8px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
     }
 
     .group-panel {
@@ -300,10 +285,11 @@ GRAPH_UI_HTML = """<!doctype html>
       max-height: min(340px, calc(100% - 120px));
       overflow: hidden;
       padding: 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+      border-radius: var(--ob-radius-panel);
       background: var(--panel-float);
       backdrop-filter: blur(8px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
     }
 
     .group-panel[hidden] {
@@ -333,8 +319,8 @@ GRAPH_UI_HTML = """<!doctype html>
       display: grid;
       gap: 3px;
       padding: 8px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
+      border: 1px solid color-mix(in srgb, var(--grouping) 34%, var(--line));
+      border-radius: var(--ob-radius-compact);
       background: var(--grouping-soft);
       color: var(--ink);
       text-align: left;
@@ -715,7 +701,7 @@ GRAPH_UI_HTML = """<!doctype html>
         const title = document.createElement("strong");
         title.textContent = group.label;
         const meta = document.createElement("span");
-        meta.textContent = `${group.member_count} memories · score ${Number(group.score || 0).toFixed(1)} · cohesion ${Number(group.cohesion || 0).toFixed(2)}`;
+        meta.textContent = `${group.member_count} memories - score ${Number(group.score || 0).toFixed(1)} - cohesion ${Number(group.cohesion || 0).toFixed(2)}`;
         item.append(title, meta);
         item.addEventListener("click", () => {
           const node = nodeById.get(item.dataset.groupNodeId);
@@ -736,7 +722,7 @@ GRAPH_UI_HTML = """<!doctype html>
       const sortedGroups = Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right));
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
-      const clusterRing = Math.max(210, Math.min(560, 150 + Math.sqrt(Math.max(1, nodes.length)) * 32));
+      const clusterRing = Math.max(260, Math.min(720, 180 + Math.sqrt(Math.max(1, nodes.length)) * 42));
       const positions = new Map();
 
       sortedGroups.forEach(([key, groupNodes], groupIndex) => {
@@ -746,13 +732,13 @@ GRAPH_UI_HTML = """<!doctype html>
           : -Math.PI / 2 + (Math.PI * 2 * groupIndex) / sortedGroups.length;
         const anchorX = centerX + (singleGroup ? 0 : Math.cos(groupAngle) * clusterRing);
         const anchorY = centerY + (singleGroup ? 0 : Math.sin(groupAngle) * clusterRing * 0.72);
-        const localRing = Math.max(70, Math.min(230, 46 + Math.sqrt(groupNodes.length) * 26));
+        const localRing = Math.max(100, Math.min(320, 64 + Math.sqrt(groupNodes.length) * 34));
         const ordered = [...groupNodes].sort((left, right) => stableHash(left.id) - stableHash(right.id));
 
         ordered.forEach((node, nodeIndex) => {
           const seed = stableHash(`${key}:${node.id}`);
           const localAngle = -Math.PI / 2 + (Math.PI * 2 * nodeIndex) / Math.max(1, ordered.length);
-          const jitter = ((seed % 100) / 100 - 0.5) * 28;
+          const jitter = ((seed % 100) / 100 - 0.5) * 44;
           const distance = ordered.length === 1 ? 0 : localRing + jitter;
           positions.set(node.id, {
             x: anchorX + Math.cos(localAngle) * distance,
@@ -821,7 +807,7 @@ GRAPH_UI_HTML = """<!doctype html>
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const distSq = Math.max(100, dx * dx + dy * dy);
-          const force = 2600 / distSq;
+          const force = 4300 / distSq;
           const dist = Math.sqrt(distSq);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
@@ -830,7 +816,7 @@ GRAPH_UI_HTML = """<!doctype html>
           b.fx += fx;
           b.fy += fy;
 
-          const separation = a.radius + b.radius + 34;
+          const separation = a.radius + b.radius + 48;
           if (dist < separation) {
             const collision = (separation - dist) * 0.045;
             const cx = (dx / dist) * collision;
@@ -849,7 +835,7 @@ GRAPH_UI_HTML = """<!doctype html>
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const desired = edge.edge_type === "correlation" ? 225 : edge.edge_type === "group_member" ? 140 : 165;
+        const desired = edge.edge_type === "correlation" ? 270 : edge.edge_type === "group_member" ? 190 : 205;
         const weight = Math.max(0.35, Math.min(1.35, edge.weight || 1));
         const force = (dist - desired) * 0.0026 * weight;
         const fx = (dx / dist) * force;
@@ -866,13 +852,13 @@ GRAPH_UI_HTML = """<!doctype html>
       for (const node of nodes) {
         if (node === dragging) continue;
         if (Number.isFinite(node.anchorX) && Number.isFinite(node.anchorY)) {
-          node.fx += (node.anchorX - node.x) * 0.0009;
-          node.fy += (node.anchorY - node.y) * 0.0009;
+          node.fx += (node.anchorX - node.x) * 0.0015;
+          node.fy += (node.anchorY - node.y) * 0.0015;
         }
-        node.fx += (centerX - node.x) * 0.00035;
-        node.fy += (centerY - node.y) * 0.00035;
-        node.vx = clamp((node.vx + node.fx) * 0.86, -7, 7);
-        node.vy = clamp((node.vy + node.fy) * 0.86, -7, 7);
+        node.fx += (centerX - node.x) * 0.00012;
+        node.fy += (centerY - node.y) * 0.00012;
+        node.vx = clamp((node.vx + node.fx) * 0.84, -7, 7);
+        node.vy = clamp((node.vy + node.fy) * 0.84, -7, 7);
         node.x += node.vx;
         node.y += node.vy;
       }
@@ -913,8 +899,7 @@ GRAPH_UI_HTML = """<!doctype html>
     function draw() {
       const rect = canvas.getBoundingClientRect();
       ctx.clearRect(0, 0, rect.width, rect.height);
-      ctx.fillStyle = cssVar("--canvas");
-      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawCanvasBackground(rect);
       ctx.save();
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.scale, transform.scale);
@@ -927,6 +912,37 @@ GRAPH_UI_HTML = """<!doctype html>
       }
       for (const node of graph.nodes) drawNode(node);
 
+      ctx.restore();
+    }
+
+    function drawCanvasBackground(rect) {
+      ctx.fillStyle = cssVar("--canvas");
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawGrid(rect, 32, cssVar("--graph-grid"), 0.8);
+      drawGrid(rect, 128, cssVar("--graph-grid-strong"), 1);
+      const glow = ctx.createRadialGradient(rect.width * 0.22, rect.height * 0.14, 0, rect.width * 0.22, rect.height * 0.14, Math.max(rect.width, rect.height) * 0.55);
+      glow.addColorStop(0, cssVar("--graph-vignette"));
+      glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+
+    function drawGrid(rect, size, color, width) {
+      const offsetX = ((transform.x % size) + size) % size;
+      const offsetY = ((transform.y % size) + size) % size;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      for (let x = offsetX; x < rect.width; x += size) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, rect.height);
+      }
+      for (let y = offsetY; y < rect.height; y += size) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(rect.width, y);
+      }
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -975,7 +991,11 @@ GRAPH_UI_HTML = """<!doctype html>
       }
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      const fill = ctx.createRadialGradient(node.x - node.radius * 0.35, node.y - node.radius * 0.45, node.radius * 0.15, node.x, node.y, node.radius);
+      fill.addColorStop(0, cssVar("--node-glint"));
+      fill.addColorStop(0.38, color);
+      fill.addColorStop(1, color);
+      ctx.fillStyle = fill;
       ctx.globalAlpha = dimmed ? 0.32 : primary ? 1 : focused ? 0.96 : 0.88;
       ctx.fill();
       ctx.shadowBlur = 0;
@@ -1001,7 +1021,7 @@ GRAPH_UI_HTML = """<!doctype html>
       }
 
       if (transform.scale > 0.55 || focused) {
-        ctx.font = primary ? "700 12px Inter, sans-serif" : "600 11px Inter, sans-serif";
+        ctx.font = primary ? "760 12px Segoe UI, sans-serif" : "650 11px Segoe UI, sans-serif";
         ctx.fillStyle = cssVar("--label");
         ctx.globalAlpha = dimmed ? 0.34 : primary ? 1 : 0.84;
         ctx.textAlign = "center";
@@ -1222,7 +1242,7 @@ GRAPH_UI_HTML = """<!doctype html>
     });
 
     window.addEventListener("resize", resize);
-    nightModeEl.checked = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    nightModeEl.checked = true;
     applyTheme();
     resize();
     loadGraph();

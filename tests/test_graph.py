@@ -1024,6 +1024,10 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
 
     assert ':root[data-theme="dark"]' in html
     assert "--ob-tigerlily" in html
+    assert "--graph-grid" in html
+    assert "function drawCanvasBackground(rect)" in html
+    assert "nightModeEl.checked = true" in html
+    assert "#eef2f5" not in html
     assert 'id="nightMode" type="checkbox"' in html
     assert 'class="legend-title">Legend</span>' in html
     assert 'id="spread"' in html
