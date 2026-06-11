@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from onebrain.config import Settings
 from onebrain.embeddings import EmbeddingProvider
-from onebrain.models import AuditEvent, Entity, Memory, MemoryEntity, Relation
+from onebrain.models import AuditEvent, Entity, Memory, MemoryEntity, MemoryLink, Relation
 from onebrain.schemas import (
     ContextMemory,
     ContextPack,
@@ -254,6 +254,67 @@ class OneBrainService:
                 raise KeyError(f"memory source_ref not found: {source_ref}")
             return MemoryOut.model_validate(memory)
 
+    async def link_memories(
+        self,
+        *,
+        from_memory_id: uuid.UUID | str,
+        to_memory_id: uuid.UUID | str,
+        link_type: str,
+        confidence: float = 0.85,
+        order_index: int | None = None,
+        evidence: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        from_id = uuid.UUID(str(from_memory_id))
+        to_id = uuid.UUID(str(to_memory_id))
+        normalized_link_type = normalize_name(link_type)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(MemoryLink)
+                .where(MemoryLink.from_memory_id == from_id)
+                .where(MemoryLink.to_memory_id == to_id)
+                .where(MemoryLink.link_type == normalized_link_type)
+            )
+            link = result.scalar_one_or_none()
+            if link is None:
+                link = MemoryLink(
+                    from_memory_id=from_id,
+                    to_memory_id=to_id,
+                    link_type=normalized_link_type,
+                )
+                session.add(link)
+
+            link.confidence = confidence
+            link.order_index = order_index
+            link.evidence = evidence
+            link.metadata_ = metadata or {}
+            await session.flush()
+            session.add(
+                AuditEvent(
+                    actor=actor,
+                    action="memory.link",
+                    subject_type="memory_link",
+                    subject_id=link.id,
+                    details={
+                        "from_memory_id": str(from_id),
+                        "to_memory_id": str(to_id),
+                        "link_type": normalized_link_type,
+                    },
+                )
+            )
+            await session.commit()
+            return {
+                "id": str(link.id),
+                "from_memory_id": str(from_id),
+                "to_memory_id": str(to_id),
+                "link_type": normalized_link_type,
+                "confidence": link.confidence,
+                "order_index": link.order_index,
+                "evidence": link.evidence,
+                "metadata": link.metadata_,
+            }
+
     async def index_memory(self, memory_id: uuid.UUID) -> None:
         async with self._session_factory() as session:
             memory = await session.get(Memory, memory_id)
@@ -445,6 +506,25 @@ class OneBrainService:
                         if relation.evidence_memory_id
                         else None,
                         "metadata": relation.metadata_,
+                    },
+                )
+                edges[edge.id] = edge
+
+        if request.include_relations and memory_ids:
+            for link in await self._graph_memory_links(memory_ids):
+                edge = GraphEdge(
+                    id=f"memory_link:{link.id}",
+                    source=self._memory_node_id(link.from_memory_id),
+                    target=self._memory_node_id(link.to_memory_id),
+                    edge_type="memory_link",
+                    label=link.link_type,
+                    weight=max(0.25, link.confidence),
+                    confidence=link.confidence,
+                    metadata={
+                        "link_type": link.link_type,
+                        "order_index": link.order_index,
+                        "evidence": link.evidence,
+                        "metadata": link.metadata_,
                     },
                 )
                 edges[edge.id] = edge
@@ -651,6 +731,16 @@ class OneBrainService:
                 .where(Relation.from_entity_id.in_(entity_ids))
                 .where(Relation.to_entity_id.in_(entity_ids))
                 .limit(1000)
+            )
+            return list(result.scalars().all())
+
+    async def _graph_memory_links(self, memory_ids: set[uuid.UUID]) -> list[MemoryLink]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(MemoryLink)
+                .where(MemoryLink.from_memory_id.in_(memory_ids))
+                .where(MemoryLink.to_memory_id.in_(memory_ids))
+                .limit(2000)
             )
             return list(result.scalars().all())
 

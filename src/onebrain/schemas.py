@@ -252,6 +252,74 @@ class GraphResponse(BaseModel):
     omitted: int = 0
 
 
+class IngestionAnalyzeRequest(BaseModel):
+    path: str = Field(min_length=1)
+    scope: dict[str, Any] = Field(default_factory=dict)
+    source_type: str = Field(default="file-import", min_length=1, max_length=64)
+    source_ref_prefix: str | None = None
+    include_extensions: list[str] | None = None
+    exclude_dirs: list[str] | None = None
+    include_examples: bool = True
+    redact_secrets: bool = True
+    max_files: int | None = Field(default=None, ge=1)
+    max_content_chars: int = Field(default=24_000, ge=512, le=200_000)
+
+
+class IngestionDocument(BaseModel):
+    id: str
+    relative_path: str
+    source_ref: str
+    title: str
+    summary: str
+    content_hash: str
+    byte_length: int
+    item_count: int
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionItem(BaseModel):
+    id: str
+    document_id: str
+    parent_item_id: str | None = None
+    order_index: int = 0
+    item_type: str
+    memory_type: MemoryType
+    title: str
+    summary: str
+    source_ref: str
+    payload: MemoryCreate
+    findings: list[str] = Field(default_factory=list)
+    redactions: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionPlan(BaseModel):
+    path: str
+    source_type: str
+    source_ref_prefix: str | None = None
+    documents: list[IngestionDocument] = Field(default_factory=list)
+    items: list[IngestionItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionCommitRequest(BaseModel):
+    plan: IngestionPlan
+    dry_run: bool = False
+
+
+class IngestionCommitResult(BaseModel):
+    dry_run: bool
+    documents: int = 0
+    items: int = 0
+    created: int = 0
+    skipped_existing: int = 0
+    failed: int = 0
+    created_ids: list[str] = Field(default_factory=list)
+    memory_id_by_item_id: dict[str, str] = Field(default_factory=dict)
+    errors: list[dict[str, str]] = Field(default_factory=list)
+
+
 class CorrelationRequest(BaseModel):
     memory_id: uuid.UUID | None = None
     query: str | None = None

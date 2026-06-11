@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, ORJSONResponse
 from onebrain.config import Settings, get_settings
 from onebrain.db import create_engine
 from onebrain.graph_ui import graph_view_html
+from onebrain.ingestion import analyze_memory_files, commit_ingestion_plan
 from onebrain.logging import configure_logging
 from onebrain.runtime import build_service
 from onebrain.schemas import (
@@ -21,6 +22,10 @@ from onebrain.schemas import (
     CorrelationResponse,
     GraphRequest,
     GraphResponse,
+    IngestionAnalyzeRequest,
+    IngestionCommitRequest,
+    IngestionCommitResult,
+    IngestionPlan,
     MemoryCreate,
     MemoryOut,
     MemoryType,
@@ -126,6 +131,37 @@ async def capture_skill(
         return await service.capture_memory(
             MemoryCreate.model_validate(hardened.payload), actor="http"
         )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/ingestion/analyze",
+    response_model=IngestionPlan,
+    dependencies=[Depends(require_api_key)],
+)
+async def analyze_ingestion(
+    payload: IngestionAnalyzeRequest,
+) -> IngestionPlan:
+    try:
+        return analyze_memory_files(payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/ingestion/commit",
+    response_model=IngestionCommitResult,
+    dependencies=[Depends(require_api_key)],
+)
+async def commit_ingestion(
+    payload: IngestionCommitRequest,
+    service: Annotated[OneBrainService, Depends(get_service)],
+) -> IngestionCommitResult:
+    try:
+        return await commit_ingestion_plan(service, payload, actor="http")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

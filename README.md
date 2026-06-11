@@ -1,6 +1,6 @@
 # OneBrain
 
-OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories in PostgreSQL, indexes semantic recall vectors in Qdrant, and exposes an MCP HTTP interface for capture, search, deterministic correlation, and context-pack composition. A FastAPI REST surface remains available for optional local debugging, but it is not part of the default runtime path.
+OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories in PostgreSQL, indexes semantic recall vectors in Qdrant, exposes a Django web/API surface for enterprise usage, and keeps an MCP HTTP interface for Codex and other agent clients. A FastAPI REST surface remains available as a compatibility/debug utility.
 
 OneBrain does not use an LLM in its online request path. The service remembers, retrieves, ranks, and explains. The calling LLM, such as Codex, is responsible for deeper reasoning over the context returned by OneBrain.
 
@@ -12,8 +12,9 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 - Stores embeddings in Qdrant for semantic recall.
 - Builds a correlation view across memories, skills, workflows, and shared entities.
 - Builds deterministic context packs for LLM callers.
+- Exposes a Django web/API surface for memory, skill, graph, and contextual ingestion workflows.
 - Exposes an MCP HTTP server for Codex and other MCP clients.
-- Keeps a FastAPI REST server as an optional debug utility.
+- Keeps a FastAPI REST server as an optional compatibility/debug utility.
 - Supports API key authentication for deployed HTTP usage.
 - Runs with Docker Compose, including PostgreSQL, Qdrant, migrations, and the MCP HTTP service.
 
@@ -22,8 +23,9 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 ```mermaid
 flowchart LR
     Client["Codex / LLM / App"] --> MCP["OneBrain MCP HTTP"]
-    Debug["Optional debug caller"] -.-> API["FastAPI debug API"]
-    MCP --> Service["OneBrain Domain Service"]
+    Web["HomeBrain Django Web/API"] --> Service["OneBrain Domain Service"]
+    Debug["Compatibility caller"] -.-> API["FastAPI debug API"]
+    MCP --> Service
     API -.-> Service
     Service --> Postgres["PostgreSQL<br/>canonical memory"]
     Service --> Qdrant["Qdrant<br/>vector recall"]
@@ -34,19 +36,22 @@ Core responsibilities:
 
 - **PostgreSQL**: source of truth for memories, entities, relations, audit events, metadata, and validity windows.
 - **Qdrant**: vector index for recall and similarity search.
-- **OneBrain MCP HTTP**: primary interface for capture, search, correlation, and context composition. It connects directly to the OneBrain domain service.
-- **FastAPI debug API**: optional manual surface for inspecting or debugging the same service outside MCP.
-- **Graph view**: local visual map of inferred shared-entity correlations.
+- **HomeBrain Django Web/API**: enterprise web/API surface for memory capture, skills, graph exploration, and contextual ingestion.
+- **OneBrain MCP HTTP**: agent interface for capture, search, correlation, and context composition. It connects directly to the OneBrain domain service.
+- **FastAPI debug API**: compatibility surface for existing local graph/debug workflows.
+- **Graph view**: local visual map of semantic, explicit, and shared-entity correlations.
 - **Calling LLM**: reasoning, interpretation, conflict analysis, and task-specific decisions.
 
 ## Repository Layout
 
 ```text
 .
-├── src/onebrain/              # Application package
+├── src/onebrain/              # Core application package
+├── src/onebrain_django/       # Django web/API facade
+├── manage.py                  # Django management entry point
 ├── migrations/                # Alembic migrations
 ├── tests/                     # Unit tests
-├── docker-compose.yml         # PostgreSQL, Qdrant, migrations, API
+├── docker-compose.yml         # PostgreSQL, Qdrant, migrations, APIs, MCP
 ├── Dockerfile                 # Production container image
 ├── .env.example               # Local configuration template
 ├── CONTRIBUTING.md            # Contribution guide
@@ -79,6 +84,8 @@ This starts:
 - `postgres`
 - `qdrant`
 - `migrate`, which runs `alembic upgrade head`
+- `api`, the FastAPI compatibility/debug API
+- `django-web`, the HomeBrain Django web/API surface
 - `mcp-http`, the OneBrain streamable HTTP MCP service
 
 Check status:
@@ -89,6 +96,9 @@ docker compose ps
 
 Open:
 
+- Django graph: `http://localhost:8000/graph`
+- Django health: `http://localhost:8000/healthz`
+- FastAPI compatibility graph: `http://localhost:8088/graph`
 - MCP health: `http://localhost:8090/healthz`
 - MCP readiness: `http://localhost:8090/readyz`
 
@@ -119,12 +129,15 @@ docker compose down -v
 | `postgres` | PostgreSQL canonical memory store |
 | `qdrant` | Vector database for semantic recall |
 | `migrate` | One-shot Alembic migration runner |
+| `django-web` | HomeBrain Django web/API surface |
+| `api` | FastAPI compatibility/debug API |
 | `mcp-http` | Streamable HTTP MCP service protected by API key |
 
 The Compose file overrides container network URLs automatically:
 
-- Docker MCP uses `postgres:5432`, not `localhost:5432`.
-- Docker MCP uses `qdrant:6333`, not `localhost:6333`.
+- Docker services use `postgres:5432`, not `localhost:5432`.
+- Docker services use `qdrant:6333`, not `localhost:6333`.
+- Web/API services mount `C:\DoxieOS` as `/mnt/doxie` for catalog ingestion.
 
 Your `.env` can still use `localhost` for host-based development.
 
@@ -137,6 +150,9 @@ Important settings:
 ```env
 ONEBRAIN_ENVIRONMENT=local
 ONEBRAIN_API_KEYS=
+ONEBRAIN_HTTP_PORT=8088
+ONEBRAIN_DJANGO_PORT=8000
+ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
 ONEBRAIN_MCP_PORT=8090
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
@@ -211,9 +227,65 @@ Production recommendation:
 
 For client configuration, set a local client-only environment variable, for example `ONEBRAIN_MCP_CLIENT_KEY=dev-key-1`, and point your MCP client at that variable.
 
-## Optional Debug REST API
+## Django Web/API
 
-The REST API is not part of the default Docker Compose runtime. Run it manually only when you need a debug surface outside MCP:
+The Django service is the preferred web/API entry point for HomeBrain platform work:
+
+```text
+http://localhost:8000
+```
+
+Core routes:
+
+- `GET /graph`: dark graph explorer for local visualization.
+- `POST /graph/data`: public local graph data endpoint used by the page.
+- `POST /v1/memories`: protected memory capture.
+- `POST /v1/skills`: protected skill capture.
+- `POST /v1/ingestion/analyze`: protected contextual file analysis.
+- `POST /v1/ingestion/commit`: protected contextual memory creation.
+- `POST /v1/search`, `/v1/context`, `/v1/correlate`, `/v1/graph`: protected recall and graph contracts.
+
+### Contextual Ingestion API
+
+The ingestion API is intentionally two-phase. First analyze files into a plan with macro context memories and child section memories. Then commit the reviewed plan into OneBrain, creating explicit `contains` links between parent and child memories.
+
+Analyze a catalog library from Docker:
+
+```powershell
+$headers = @{ Authorization = "Bearer dev-key-1" }
+$body = @{
+  path = "/mnt/doxie/github-private-catalog/libraries/ambevtech-developer-memory"
+  source_type = "private-catalog-library"
+  source_ref_prefix = "catalog://private/libraries/ambevtech-developer-memory"
+  include_examples = $false
+  scope = @{
+    organization = "abinbev"
+    catalog = "private-engineering-catalog"
+    source = "private-catalog"
+  }
+} | ConvertTo-Json -Depth 20
+
+$plan = Invoke-RestMethod http://localhost:8000/v1/ingestion/analyze `
+  -Headers $headers `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Commit the plan:
+
+```powershell
+$commitBody = @{ plan = $plan; dry_run = $false } | ConvertTo-Json -Depth 100
+Invoke-RestMethod http://localhost:8000/v1/ingestion/commit `
+  -Headers $headers `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $commitBody
+```
+
+## FastAPI Compatibility REST API
+
+The FastAPI service is still available in Docker Compose on `http://localhost:8088` for compatibility with existing local graph/debug workflows. You can also run it manually:
 
 ```powershell
 uv run uvicorn onebrain.api:app --host 127.0.0.1 --port 8080

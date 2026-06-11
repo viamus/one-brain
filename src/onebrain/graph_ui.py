@@ -10,18 +10,51 @@ GRAPH_UI_HTML = """<!doctype html>
     :root {
       color-scheme: light;
       --bg: #f6f7f8;
+      --canvas: #eef2f5;
       --panel: #ffffff;
       --panel-strong: #eef1f3;
+      --panel-float: rgba(255, 255, 255, 0.92);
+      --control: #ffffff;
       --line: #d7dde2;
       --ink: #182027;
+      --label: #182027;
       --muted: #64717d;
       --memory: #2d6f73;
       --skill: #7a5cbd;
       --workflow: #b36b27;
       --entity: #315f9f;
       --edge: #81909c;
+      --correlation: #8d7b4d;
+      --node-stroke: #ffffff;
+      --centroid: #c78213;
+      --grouping: #108e8c;
       --focus: #0b6bcb;
       --danger: #b54137;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0b1117;
+      --canvas: #081018;
+      --panel: #111923;
+      --panel-strong: #16212d;
+      --panel-float: rgba(17, 25, 35, 0.92);
+      --control: #0d1520;
+      --line: #2a3949;
+      --ink: #edf3f7;
+      --label: #f2f6fa;
+      --muted: #9aaabb;
+      --memory: #45a27c;
+      --skill: #a78be7;
+      --workflow: #df9448;
+      --entity: #7ea6de;
+      --edge: #6f8294;
+      --correlation: #d2ad55;
+      --node-stroke: #111923;
+      --centroid: #f0bd45;
+      --grouping: #28beb8;
+      --focus: #5da7f0;
+      --danger: #ee786f;
     }
 
     * { box-sizing: border-box; }
@@ -31,6 +64,8 @@ GRAPH_UI_HTML = """<!doctype html>
       min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
+      display: flex;
+      flex-direction: column;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
     }
@@ -55,27 +90,77 @@ GRAPH_UI_HTML = """<!doctype html>
 
     .status {
       min-width: 160px;
+      max-width: min(520px, 44vw);
       text-align: right;
       color: var(--muted);
       font-size: 13px;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .toolbar {
-      display: grid;
-      grid-template-columns: minmax(180px, 2fr) minmax(140px, 1fr) 96px minmax(180px, 1fr) auto auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
       gap: 10px;
       padding: 12px 18px;
       border-bottom: 1px solid var(--line);
       background: var(--panel-strong);
     }
 
-    label {
+    .control {
       display: grid;
       gap: 4px;
+      flex: 1 1 150px;
+      min-width: 120px;
       color: var(--muted);
       font-size: 12px;
       font-weight: 650;
+    }
+
+    .control-query {
+      flex: 2 1 260px;
+    }
+
+    .control-scope {
+      flex: 1.4 1 230px;
+    }
+
+    .control-short {
+      flex: 0 1 118px;
+    }
+
+    .toggle-control {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex: 0 0 auto;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--control);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .toggle-control input {
+      width: 17px;
+      height: 17px;
+      min-height: 17px;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--focus);
+    }
+
+    .toolbar-actions {
+      display: inline-flex;
+      gap: 8px;
+      align-self: end;
     }
 
     input,
@@ -84,7 +169,7 @@ GRAPH_UI_HTML = """<!doctype html>
       min-height: 34px;
       border-radius: 7px;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--control);
       color: var(--ink);
       font: inherit;
       font-size: 14px;
@@ -118,14 +203,15 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .workspace {
-      height: calc(100vh - 130px);
+      flex: 1 1 auto;
       min-height: 440px;
     }
 
     .canvas-shell {
       position: relative;
       min-width: 0;
-      background: var(--bg);
+      height: 100%;
+      background: var(--canvas);
       overflow: hidden;
     }
 
@@ -143,7 +229,7 @@ GRAPH_UI_HTML = """<!doctype html>
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.92);
+      background: var(--panel-float);
       backdrop-filter: blur(8px);
     }
 
@@ -180,7 +266,7 @@ GRAPH_UI_HTML = """<!doctype html>
       padding: 8px 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--panel-float);
       color: var(--muted);
       font-size: 12px;
       backdrop-filter: blur(8px);
@@ -200,15 +286,31 @@ GRAPH_UI_HTML = """<!doctype html>
       background: var(--edge);
     }
 
+    .line-sample {
+      width: 22px;
+      height: 0;
+      border-top: 2px solid var(--edge);
+    }
+
+    .line-sample.correlation {
+      border-top-color: var(--correlation);
+      border-top-style: dashed;
+    }
+
+    .ring-sample {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      border: 2px solid var(--centroid);
+      background: transparent;
+    }
+
+    .ring-sample.grouping {
+      border-color: var(--grouping);
+      border-style: dashed;
+    }
+
     @media (max-width: 980px) {
-      .toolbar {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .workspace {
-        height: calc(100vh - 198px);
-      }
-
       .metrics {
         left: 12px;
         right: auto;
@@ -223,10 +325,10 @@ GRAPH_UI_HTML = """<!doctype html>
   </header>
 
   <section class="toolbar" aria-label="Correlation filters">
-    <label>Query
+    <label class="control control-query">Search
       <input id="query" type="search" autocomplete="off" placeholder="memory, skill, workflow">
     </label>
-    <label>Type
+    <label class="control">Memory type
       <select id="type">
         <option value="">All</option>
         <option value="skill">Skill</option>
@@ -238,14 +340,30 @@ GRAPH_UI_HTML = """<!doctype html>
         <option value="note">Note</option>
       </select>
     </label>
-    <label>Limit
+    <label class="control control-short">Memory limit
       <input id="limit" type="number" min="1" max="500" step="1" value="100">
     </label>
-    <label>Scope JSON
+    <label class="control control-scope">Scope JSON
       <input id="scope" type="text" autocomplete="off" placeholder='{"project":"one-brain"}'>
     </label>
-    <button class="primary" id="load">Load</button>
-    <button id="fit">Fit</button>
+    <label class="control control-short">Correlation limit
+      <input id="correlationLimit" type="number" min="0" max="2000" step="10" value="250">
+    </label>
+    <label class="control control-short">Max degree
+      <input id="maxDegree" type="number" min="1" max="50" step="1" value="6">
+    </label>
+    <label class="toggle-control" title="Include vector-neighbor correlation edges">
+      <span>Vector edges</span>
+      <input id="includeVectorCorrelations" type="checkbox" checked>
+    </label>
+    <label class="toggle-control" title="Use the dark graph theme">
+      <span>Night mode</span>
+      <input id="nightMode" type="checkbox">
+    </label>
+    <div class="toolbar-actions">
+      <button class="primary" id="load">Load</button>
+      <button id="fit">Fit</button>
+    </div>
   </section>
 
   <main class="workspace">
@@ -260,7 +378,10 @@ GRAPH_UI_HTML = """<!doctype html>
         <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
         <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
         <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
-        <span class="legend-item"><span class="dot" style="background: #8d7b4d"></span>Correlation</span>
+        <span class="legend-item"><span class="dot" style="background: var(--entity)"></span>Entity</span>
+        <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
+        <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
+        <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
       </div>
     </section>
   </main>
@@ -276,6 +397,10 @@ GRAPH_UI_HTML = """<!doctype html>
     const typeEl = document.getElementById("type");
     const limitEl = document.getElementById("limit");
     const scopeEl = document.getElementById("scope");
+    const correlationLimitEl = document.getElementById("correlationLimit");
+    const maxDegreeEl = document.getElementById("maxDegree");
+    const includeVectorEl = document.getElementById("includeVectorCorrelations");
+    const nightModeEl = document.getElementById("nightMode");
 
     let graph = { nodes: [], edges: [], memory_count: 0 };
     let transform = { x: 0, y: 0, scale: 1 };
@@ -286,18 +411,43 @@ GRAPH_UI_HTML = """<!doctype html>
     let panning = false;
     let lastPointer = null;
     let running = false;
+    let animationFrameId = null;
 
     const colors = {
-      memory: "#2d6f73",
-      skill: "#7a5cbd",
-      workflow: "#b36b27",
-      entity: "#315f9f",
-      rule: "#3d7f4f",
-      decision: "#9b4f55",
-      context: "#5d6e36",
-      note: "#56636e",
-      fact: "#426f93"
+      memory: "--memory",
+      skill: "--skill",
+      workflow: "--workflow",
+      entity: "--entity",
+      rule: "--memory",
+      decision: "--workflow",
+      context: "--entity",
+      note: "--muted",
+      fact: "--entity"
     };
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function nodeColor(node) {
+      return cssVar(colors[node.subtype] || colors[node.node_type] || "--memory");
+    }
+
+    function graphRole(node) {
+      return node.metadata?.graph?.role || "";
+    }
+
+    function graphRoleLabel(role) {
+      if (role === "centroid_candidate") return "Centroid candidate";
+      if (role === "grouping_opportunity") return "Grouping opportunity";
+      return "";
+    }
+
+    function graphRoleColor(role) {
+      if (role === "centroid_candidate") return cssVar("--centroid");
+      if (role === "grouping_opportunity") return cssVar("--grouping");
+      return cssVar("--focus");
+    }
 
     function resize() {
       const rect = canvas.getBoundingClientRect();
@@ -332,8 +482,9 @@ GRAPH_UI_HTML = """<!doctype html>
         include_entities: false,
         include_relations: false,
         include_correlations: true,
-        correlation_limit: 120,
-        max_correlation_degree: 6
+        include_vector_correlations: includeVectorEl.checked,
+        correlation_limit: Number(correlationLimitEl.value || 250),
+        max_correlation_degree: Number(maxDegreeEl.value || 6)
       };
     }
 
@@ -393,8 +544,7 @@ GRAPH_UI_HTML = """<!doctype html>
         edge.sourceNode.degree += 1;
         edge.targetNode.degree += 1;
       }
-      running = true;
-      requestAnimationFrame(tick);
+      startSimulation();
     }
 
     function nodeRadius(node) {
@@ -403,11 +553,20 @@ GRAPH_UI_HTML = """<!doctype html>
       return base + bonus + Math.min(6, Math.round((node.weight || 1) * 4));
     }
 
+    function startSimulation() {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      running = true;
+      animationFrameId = requestAnimationFrame(tick);
+    }
+
     function tick() {
+      animationFrameId = null;
       if (!running) return;
       simulate();
       draw();
-      requestAnimationFrame(tick);
+      animationFrameId = requestAnimationFrame(tick);
     }
 
     function simulate() {
@@ -470,6 +629,8 @@ GRAPH_UI_HTML = """<!doctype html>
     function draw() {
       const rect = canvas.getBoundingClientRect();
       ctx.clearRect(0, 0, rect.width, rect.height);
+      ctx.fillStyle = cssVar("--canvas");
+      ctx.fillRect(0, 0, rect.width, rect.height);
       ctx.save();
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.scale, transform.scale);
@@ -486,7 +647,7 @@ GRAPH_UI_HTML = """<!doctype html>
       if (!a || !b) return;
       ctx.save();
       ctx.globalAlpha = edge === selected || edge === hover ? 0.95 : 0.42;
-      ctx.strokeStyle = edge.edge_type === "correlation" ? "#8d7b4d" : "#81909c";
+      ctx.strokeStyle = edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
       ctx.lineWidth = edge === selected || edge === hover ? 2.2 : Math.max(0.7, edge.weight || 1);
       ctx.setLineDash(edge.edge_type === "correlation" ? [5, 5] : []);
       ctx.beginPath();
@@ -497,7 +658,8 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     function drawNode(node) {
-      const color = colors[node.subtype] || colors[node.node_type] || colors.memory;
+      const color = nodeColor(node);
+      const role = graphRole(node);
       const active = node === selected || node === hover;
       ctx.save();
       ctx.beginPath();
@@ -506,12 +668,29 @@ GRAPH_UI_HTML = """<!doctype html>
       ctx.globalAlpha = active ? 1 : 0.9;
       ctx.fill();
       ctx.lineWidth = active ? 3 : 1;
-      ctx.strokeStyle = active ? "#111820" : "#ffffff";
+      ctx.strokeStyle = active ? cssVar("--ink") : cssVar("--node-stroke");
       ctx.stroke();
+
+      if (role) {
+        ctx.globalAlpha = active ? 1 : 0.88;
+        ctx.lineWidth = active ? 3.2 : 2.3;
+        ctx.strokeStyle = graphRoleColor(role);
+        ctx.setLineDash(role === "grouping_opportunity" ? [5, 4] : []);
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (role === "centroid_candidate") {
+          ctx.globalAlpha = active ? 0.55 : 0.35;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.radius + 8, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
 
       if (transform.scale > 0.55 || active) {
         ctx.font = active ? "700 12px Inter, sans-serif" : "600 11px Inter, sans-serif";
-        ctx.fillStyle = "#182027";
+        ctx.fillStyle = cssVar("--label");
         ctx.globalAlpha = active ? 1 : 0.84;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
@@ -609,13 +788,22 @@ GRAPH_UI_HTML = """<!doctype html>
         return;
       }
       if (item.node_type) {
-        setStatus(item.label);
+        const role = graphRole(item);
+        const roleLabel = graphRoleLabel(role);
+        const graphStats = item.metadata?.graph || {};
+        const degree = graphStats.degree ? ` (${graphStats.degree} links)` : "";
+        setStatus(roleLabel ? `${item.label} - ${roleLabel}${degree}` : `${item.label}${degree}`);
         return;
       }
       const shared = item.metadata?.shared_entities || [];
       const facets = item.metadata?.shared_facets || [];
       const reasons = shared.length ? shared : facets;
       setStatus(reasons.length ? `Correlation: ${reasons.slice(0, 3).join(", ")}` : "Correlation");
+    }
+
+    function applyTheme() {
+      document.documentElement.dataset.theme = nightModeEl.checked ? "dark" : "light";
+      draw();
     }
 
     canvas.addEventListener("pointerdown", (event) => {
@@ -672,11 +860,15 @@ GRAPH_UI_HTML = """<!doctype html>
 
     document.getElementById("load").addEventListener("click", loadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
+    includeVectorEl.addEventListener("change", loadGraph);
+    nightModeEl.addEventListener("change", applyTheme);
     queryEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter") loadGraph();
     });
 
     window.addEventListener("resize", resize);
+    nightModeEl.checked = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    applyTheme();
     resize();
     loadGraph();
   </script>

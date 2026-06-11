@@ -394,3 +394,26 @@ def test_graph_view_html_points_to_graph_endpoint() -> None:
     assert "include_relations: false" in html
     assert "apiKey" not in html
     assert "detailsJson" not in html
+
+
+def test_graph_view_html_exposes_correlation_controls() -> None:
+    html = graph_view_html()
+
+    assert 'id="includeVectorCorrelations" type="checkbox" checked' in html
+    assert 'id="correlationLimit" type="number" min="0" max="2000"' in html
+    assert 'id="maxDegree" type="number" min="1" max="50"' in html
+    assert "include_vector_correlations: includeVectorEl.checked" in html
+    assert "correlation_limit: Number(correlationLimitEl.value || 250)" in html
+    assert "max_correlation_degree: Number(maxDegreeEl.value || 6)" in html
+
+
+def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> None:
+    html = graph_view_html()
+
+    assert ':root[data-theme="dark"]' in html
+    assert 'id="nightMode" type="checkbox"' in html
+    assert "document.documentElement.dataset.theme" in html
+    assert "centroid_candidate" in html
+    assert "grouping_opportunity" in html
+    assert "cancelAnimationFrame(animationFrameId)" in html
+    assert "animationFrameId = requestAnimationFrame(tick)" in html
