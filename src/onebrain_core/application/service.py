@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import combinations
+from pathlib import PurePosixPath
 from typing import Any
 
 import structlog
@@ -170,6 +171,11 @@ CORRELATION_STOPWORDS = {
     "wiki",
     "with",
     "work",
+}
+
+GENERIC_MEMORY_TITLES = {
+    "document",
+    "document body",
 }
 
 
@@ -1392,9 +1398,83 @@ class OneBrainService:
         )
 
     def _memory_label(self, memory: Memory) -> str:
-        if memory.title:
-            return self._shorten(memory.title, 80)
+        title = (memory.title or "").strip()
+        if title and not self._is_generic_memory_title(title):
+            return self._shorten(title, 80)
+        derived_label = self._derived_memory_label(memory)
+        if derived_label:
+            return self._shorten(derived_label, 80)
         return self._shorten(self._preview(memory.content), 80)
+
+    def _is_generic_memory_title(self, value: str) -> bool:
+        normalized = re.sub(r"\s+\(\d+/\d+\)$", "", normalize_name(value)).strip()
+        return normalized in GENERIC_MEMORY_TITLES
+
+    def _derived_memory_label(self, memory: Memory) -> str | None:
+        metadata = memory.metadata_ or {}
+        relative_path = (
+            self._metadata_string(metadata, "relative_path")
+            or self._source_document_from_content(memory.content)
+            or self._source_path_from_ref(memory.source_ref)
+        )
+        source_label = self._source_file_label(relative_path)
+        section_title = self._metadata_string(metadata, "section_title")
+        summary = self._metadata_string(metadata, "summary") or self._summary_from_content(
+            memory.content
+        )
+
+        if section_title and not self._is_generic_memory_title(section_title):
+            if source_label:
+                return f"{source_label}: {section_title}"
+            return section_title
+        if source_label and summary and not self._is_generic_summary(summary):
+            return f"{source_label}: {summary}"
+        if source_label and (order_index := metadata.get("order_index")):
+            return f"{source_label}: section {order_index}"
+        if source_label:
+            return source_label
+        if summary and not self._is_generic_summary(summary):
+            return summary
+        return None
+
+    def _metadata_string(self, metadata: dict[str, Any], key: str) -> str | None:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    def _source_document_from_content(self, content: str) -> str | None:
+        match = re.search(r"(?im)^Source document:\s*(.+?)\s*$", content)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r"(?im)^Source file:\s*(.+?)\s*$", content)
+        if match:
+            return match.group(1).strip()
+        return None
+
+    def _source_path_from_ref(self, source_ref: str | None) -> str | None:
+        if not source_ref:
+            return None
+        return source_ref.split("#", 1)[0].strip()
+
+    def _source_file_label(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = value.replace("\\", "/").rstrip("/")
+        if not normalized:
+            return None
+        name = PurePosixPath(normalized).name
+        return name or normalized
+
+    def _summary_from_content(self, content: str) -> str | None:
+        match = re.search(r"(?im)^Summary:\s*(.+?)\s*$", content)
+        if not match:
+            return None
+        return match.group(1).strip()
+
+    def _is_generic_summary(self, value: str) -> bool:
+        normalized = normalize_name(value)
+        return normalized in {"no textual content available", "document body", "document"}
 
     def _preview(self, value: str, max_length: int = 280) -> str:
         return self._shorten(" ".join(value.split()), max_length)

@@ -56,6 +56,20 @@ def test_analyze_memory_files_builds_macro_and_child_items(tmp_path) -> None:
     assert children[0].payload.scope == {"project": "one-brain", "library": "library"}
 
 
+def test_analyze_memory_files_uses_specific_title_for_body_fallback(tmp_path) -> None:
+    source = tmp_path / "library" / "plain.txt"
+    source.parent.mkdir()
+    source.write_text("Plain operational knowledge without markdown headings.", encoding="utf-8")
+
+    plan = analyze_memory_files(IngestionAnalyzeRequest(path=str(tmp_path)))
+
+    child = next(item for item in plan.items if item.item_type == "section")
+
+    assert child.title == "Details: Plain"
+    assert child.payload.title == "Details: Plain"
+    assert child.payload.metadata["section_title"] == "Details: Plain"
+
+
 @pytest.mark.asyncio
 async def test_commit_ingestion_plan_creates_parent_child_links(tmp_path) -> None:
     source = tmp_path / "guide.md"

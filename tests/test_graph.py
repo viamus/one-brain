@@ -353,6 +353,56 @@ def test_graph_insights_annotate_centroid_candidates() -> None:
     assert nodes[center_id].weight > 1.0
 
 
+def test_memory_graph_label_derives_source_context_for_generic_document_body() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="Document body",
+        content=(
+            "# Document body\n\n"
+            "Summary: Canonical Python entry point keeps FastAPI tracing stable.\n\n"
+            "Source document: sources/platform/runtime.md\n"
+            "Parent context: Runtime platform\n\n"
+            "Details."
+        ),
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:child"],
+        confidence=0.8,
+        source_type="private-catalog-library",
+        source_ref="catalog://private/libraries/platform/sources/platform/runtime.md#section-1",
+        metadata_={
+            "relative_path": "sources/platform/runtime.md",
+            "order_index": 1,
+            "summary": "Canonical Python entry point keeps FastAPI tracing stable.",
+        },
+    )
+
+    node = service._memory_graph_node(memory)
+
+    assert node.label == "runtime.md: Canonical Python entry point keeps FastAPI tracing stable."
+    assert node.label != "Document body"
+
+
+def test_memory_graph_label_uses_source_ref_when_generic_metadata_is_missing() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="Document",
+        content="No useful headings.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=[],
+        confidence=0.8,
+        source_type="private-catalog-library",
+        source_ref="catalog://private/libraries/platform/sources/platform/runtime.md#section-1",
+    )
+
+    assert service._memory_label(memory) == "runtime.md"
+
+
 @pytest.mark.asyncio
 async def test_graph_query_caps_internal_search_limit() -> None:
     service = OneBrainService.__new__(OneBrainService)

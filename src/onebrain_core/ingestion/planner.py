@@ -81,7 +81,11 @@ def analyze_memory_files(request: IngestionAnalyzeRequest) -> IngestionPlan:
         summary = _summary_for_text(parsed.metadata.get("description") or parsed.body)
         source_ref = _source_ref_for_file(relative, request.source_ref_prefix)
         document_id = _stable_id("document", source_ref)
-        sections = _sections_for_file(parsed.body.strip(), request.max_content_chars)
+        sections = _sections_for_file(
+            parsed.body.strip(),
+            request.max_content_chars,
+            fallback_title=f"Details: {title}",
+        )
         document = IngestionDocument(
             id=document_id,
             relative_path=relative,
@@ -283,6 +287,7 @@ def _section_item(
             "document_id": document.id,
             "parent_item_id": parent.id,
             "order_index": order_index,
+            "section_title": section_title,
             "summary": summary,
         },
     )
@@ -337,9 +342,14 @@ def _memory_payload(
     return hardened.payload
 
 
-def _sections_for_file(text: str, max_content_chars: int) -> list[dict[str, str]]:
+def _sections_for_file(
+    text: str,
+    max_content_chars: int,
+    *,
+    fallback_title: str,
+) -> list[dict[str, str]]:
     markdown_sections = _markdown_sections(text)
-    raw_sections = markdown_sections or [{"title": "Document body", "body": text}]
+    raw_sections = markdown_sections or [{"title": fallback_title, "body": text}]
     sections: list[dict[str, str]] = []
     for section in raw_sections:
         chunks = chunk_text(section["body"], max_content_chars)
