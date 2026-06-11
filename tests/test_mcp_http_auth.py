@@ -6,7 +6,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from onebrain_django.mcp.auth import McpApiKeyAuthMiddleware
+from onebrain_mcp.auth import McpApiKeyAuthMiddleware
 
 
 async def ok_endpoint(request):

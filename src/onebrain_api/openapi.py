@@ -276,10 +276,10 @@ def openapi_schema() -> Schema:
     return {
         "openapi": "3.1.0",
         "info": {
-            "title": "OneBrain Django API",
+            "title": "OneBrain API",
             "version": "0.1.0",
             "description": (
-                "Corporate Django API for OneBrain memories, skills, graph correlations, "
+                "Corporate API for OneBrain memories, skills, graph correlations, "
                 "contextual ingestion, and MCP-backed retrieval."
             ),
         },

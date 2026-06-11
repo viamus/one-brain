@@ -21,4 +21,4 @@ RUN uv sync --frozen --no-dev --no-editable
 
 EXPOSE 8000
 
-CMD ["onebrain-django"]
+CMD ["onebrain-host"]

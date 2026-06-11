@@ -1,9 +1,5 @@
-from __future__ import annotations
+"""Compatibility reexports for the former onebrain_django WSGI module."""
 
-import os
+# ruff: noqa: F401
 
-from django.core.wsgi import get_wsgi_application
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "onebrain_django.settings")
-
-application = get_wsgi_application()
+from onebrain_host.wsgi import application

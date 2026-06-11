@@ -7,6 +7,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from pydantic import ValidationError
 
+from onebrain_api.openapi import openapi_schema
 from onebrain_core.application.skills import harden_skill_payload
 from onebrain_core.contracts.schemas import (
     ContextRequest,
@@ -20,8 +21,7 @@ from onebrain_core.contracts.schemas import (
     SkillCreate,
 )
 from onebrain_core.ingestion import analyze_memory_files, commit_ingestion_plan
-from onebrain_django.api.openapi import openapi_schema
-from onebrain_django.http import (
+from onebrain_host.http import (
     error_response,
     json_response,
     maybe_await,
@@ -29,14 +29,14 @@ from onebrain_django.http import (
     require_api_key,
     validate_payload,
 )
-from onebrain_django.jobs.graph_aggregation import GraphAggregationJobConfig
-from onebrain_django.jobs.scheduler import ScheduledJobConfig
-from onebrain_django.jobs.status import (
+from onebrain_host.runtime import get_runtime_service, get_runtime_settings
+from onebrain_jobs.graph_aggregation import GraphAggregationJobConfig
+from onebrain_jobs.scheduler import ScheduledJobConfig
+from onebrain_jobs.status import (
     JOB_NAME_GRAPH_AGGREGATION,
     graph_aggregation_status_response,
     read_job_status,
 )
-from onebrain_django.runtime import get_runtime_service, get_runtime_settings
 
 
 async def openapi_json(_request: HttpRequest) -> JsonResponse:

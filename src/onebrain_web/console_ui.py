@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from onebrain_django.web.design_system import ONEBRAIN_DESIGN_SYSTEM_CSS
+from onebrain_web.design_system import ONEBRAIN_DESIGN_SYSTEM_CSS
 
 
 def console_view_html() -> str:
@@ -477,7 +477,7 @@ CONSOLE_UI_HTML = """<!doctype html>
                     <div class="job-run-list">
                       <div class="job-run-row">
                         <span>Command</span>
-                        <strong id="jobCommand">onebrain-django run_scheduled_jobs --job graph-aggregation</strong>
+                        <strong id="jobCommand">onebrain-jobs run_scheduled_jobs --job graph-aggregation</strong>
                       </div>
                       <div class="job-run-row">
                         <span>Last run</span>
@@ -485,7 +485,7 @@ CONSOLE_UI_HTML = """<!doctype html>
                       </div>
                       <div class="job-run-row">
                         <span>Next run</span>
-                        <strong id="jobNextRun">Every 3600 seconds while the graph-aggregation-job container is running</strong>
+                        <strong id="jobNextRun">Every 3600 seconds while the onebrain-jobs service is running</strong>
                       </div>
                       <div class="job-run-row">
                         <span>Materialization</span>
@@ -629,7 +629,7 @@ CONSOLE_UI_HTML = """<!doctype html>
         <div class="operation-header">
           <div>
             <h2 class="operation-title">${escapeHtml(entry.operation.summary || entry.path)}</h2>
-            <p class="operation-summary">${escapeHtml(entry.operation.description || "OneBrain Django API operation.")}</p>
+            <p class="operation-summary">${escapeHtml(entry.operation.description || "OneBrain API operation.")}</p>
           </div>
           <span class="method-pill" data-method="${entry.method.toUpperCase()}">${entry.method.toUpperCase()}</span>
         </div>
@@ -681,11 +681,11 @@ CONSOLE_UI_HTML = """<!doctype html>
       jobInterval.textContent = formatSeconds(scheduler.interval_seconds);
       jobGraphLimit.textContent = String(configuration.limit ?? "-");
       jobMaxDegree.textContent = String(configuration.max_degree ?? "-");
-      jobCommand.textContent = payload.command || "onebrain-django run_scheduled_jobs --job graph-aggregation";
+      jobCommand.textContent = payload.command || "onebrain-jobs run_scheduled_jobs --job graph-aggregation";
       jobLastRunDetail.textContent = lastRun ? runDetail(lastRun) : "No scheduler execution has been persisted yet.";
       jobNextRun.textContent = payload.next_run_at
         ? formatTimestamp(payload.next_run_at)
-        : `Every ${formatSeconds(scheduler.interval_seconds)} while the graph-aggregation-job container is running`;
+        : `Every ${formatSeconds(scheduler.interval_seconds)} while the onebrain-jobs service is running`;
       jobMaterialization.textContent = `Creates ${configuration.memory_type || "context"} memories and links members as ${configuration.link_type || "aggregates"}.`;
       jobScope.textContent = JSON.stringify(configuration.scope || {});
       jobCorrelationLimit.textContent = String(configuration.correlation_limit ?? "-");

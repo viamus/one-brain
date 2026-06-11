@@ -18,7 +18,7 @@ from onebrain_core.contracts.schemas import (
     SearchFilters,
     SearchRequest,
 )
-from onebrain_django.runtime import close_runtime, get_runtime_service, get_runtime_settings
+from onebrain_host.runtime import close_runtime, get_runtime_service, get_runtime_settings
 
 mcp = FastMCP(
     "OneBrain",

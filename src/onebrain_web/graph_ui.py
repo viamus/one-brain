@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from onebrain_django.web.design_system import ONEBRAIN_DESIGN_SYSTEM_CSS
+from onebrain_web.design_system import ONEBRAIN_DESIGN_SYSTEM_CSS
 
 GRAPH_UI_HTML = """<!doctype html>
 <html lang="en">
