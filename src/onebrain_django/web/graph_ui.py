@@ -67,7 +67,7 @@ GRAPH_UI_HTML = """<!doctype html>
 
     header {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) auto minmax(180px, 0.62fr);
+      grid-template-columns: minmax(220px, 1fr) auto;
       align-items: center;
       gap: 16px;
       min-height: 56px;
@@ -92,6 +92,7 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .status {
+      display: none;
       min-width: 160px;
       max-width: min(520px, 44vw);
       text-align: right;
@@ -100,6 +101,10 @@ GRAPH_UI_HTML = """<!doctype html>
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .status[data-visible="true"] {
+      display: block;
     }
 
     .graph-shell {
@@ -176,32 +181,6 @@ GRAPH_UI_HTML = """<!doctype html>
 
     .control-short {
       min-width: 0;
-    }
-
-    .toggle-control {
-      min-height: 34px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex: 0 0 auto;
-      padding: 6px 10px;
-      border: 1px solid var(--line);
-      border-radius: var(--ob-radius-compact);
-      background: var(--control);
-      color: var(--ink);
-      font-size: 13px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .toggle-control input {
-      width: 17px;
-      height: 17px;
-      min-height: 17px;
-      margin: 0;
-      padding: 0;
-      accent-color: var(--focus);
     }
 
     .toolbar-actions {
@@ -282,22 +261,75 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     .top-metrics {
-      justify-self: center;
+      justify-self: end;
       box-shadow: none;
       background: color-mix(in srgb, var(--panel) 82%, transparent);
     }
 
     .metric {
-      min-width: 92px;
-      padding: 10px 12px;
+      min-width: 104px;
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr);
+      align-items: center;
+      gap: 9px;
+      padding: 9px 12px;
       border-right: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
     }
 
     .metric:last-child { border-right: 0; }
 
+    .metric-icon {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid color-mix(in srgb, var(--ob-tigerlily) 22%, var(--line));
+      border-radius: var(--ob-radius-compact);
+      background: color-mix(in srgb, var(--ob-tigerlily) 8%, transparent);
+    }
+
+    .metric-icon::before {
+      content: "";
+      display: block;
+    }
+
+    .metric-icon.nodes::before {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--memory);
+      box-shadow: 7px 6px 0 color-mix(in srgb, var(--context) 90%, transparent);
+    }
+
+    .metric-icon.edges::before {
+      width: 15px;
+      border-top: 2px dashed var(--correlation);
+      transform: rotate(-18deg);
+    }
+
+    .metric-icon.memories::before {
+      width: 12px;
+      height: 14px;
+      border: 2px solid var(--context);
+      border-radius: 3px;
+      box-shadow: 4px 4px 0 color-mix(in srgb, var(--context) 36%, transparent);
+    }
+
+    .metric-icon.groups::before {
+      width: 13px;
+      height: 13px;
+      border: 2px dashed var(--grouping);
+      border-radius: 50%;
+    }
+
+    .metric-body {
+      min-width: 0;
+    }
+
     .metric strong {
       display: block;
-      font-size: 20px;
+      font-size: 19px;
       line-height: 1;
     }
 
@@ -313,13 +345,13 @@ GRAPH_UI_HTML = """<!doctype html>
       position: absolute;
       z-index: 3;
       top: 12px;
-      left: 12px;
-      right: 12px;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
       align-items: center;
       gap: 12px;
-      width: auto;
-      max-width: calc(100% - 24px);
+      width: fit-content;
+      max-width: calc(100% - 48px);
       padding: 8px 10px;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       border-radius: var(--ob-radius-panel);
@@ -328,111 +360,6 @@ GRAPH_UI_HTML = """<!doctype html>
       font-size: 12px;
       backdrop-filter: blur(8px);
       box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
-    }
-
-    .group-accordion {
-      display: grid;
-      gap: 8px;
-      width: 100%;
-      min-height: 0;
-    }
-
-    .group-accordion summary {
-      min-height: 34px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      cursor: pointer;
-      color: var(--ink);
-      font-size: 12px;
-      font-weight: 800;
-      list-style: none;
-    }
-
-    .group-accordion summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .group-accordion summary::after {
-      content: "+";
-      width: 22px;
-      height: 22px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
-      border-radius: var(--ob-radius-compact);
-      color: var(--muted);
-    }
-
-    .group-accordion[open] summary::after {
-      content: "-";
-      color: var(--ob-tigerlily);
-    }
-
-    .group-panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 720;
-    }
-
-    .group-list {
-      display: grid;
-      gap: 6px;
-      overflow: auto;
-      max-height: min(44vh, 420px);
-      padding-right: 2px;
-    }
-
-    .group-empty {
-      min-height: 72px;
-      display: grid;
-      place-items: center;
-      border: 1px dashed color-mix(in srgb, var(--line) 84%, transparent);
-      border-radius: var(--ob-radius-compact);
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
-      padding: 10px;
-      text-align: center;
-    }
-
-    .group-empty[hidden] {
-      display: none;
-    }
-
-    .group-item {
-      width: 100%;
-      min-height: 0;
-      display: grid;
-      gap: 3px;
-      padding: 8px;
-      border: 1px solid color-mix(in srgb, var(--grouping) 34%, var(--line));
-      border-radius: var(--ob-radius-compact);
-      background: var(--grouping-soft);
-      color: var(--ink);
-      text-align: left;
-    }
-
-    .group-item strong {
-      display: block;
-      overflow: hidden;
-      color: var(--ink);
-      font-size: 12px;
-      line-height: 1.2;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .group-item span {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.25;
     }
 
     .legend-title {
@@ -519,6 +446,9 @@ GRAPH_UI_HTML = """<!doctype html>
       .legend {
         align-items: flex-start;
         flex-direction: column;
+        left: 12px;
+        transform: none;
+        width: calc(100% - 24px);
       }
 
       .metrics {
@@ -538,12 +468,12 @@ GRAPH_UI_HTML = """<!doctype html>
       <h1>OneBrain Correlations</h1>
     </div>
     <section class="metrics top-metrics" aria-label="Graph metrics">
-      <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
-      <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
-      <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
-      <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
+      <div class="metric"><span class="metric-icon nodes" aria-hidden="true"></span><div class="metric-body"><strong id="nodeCount">0</strong><span>Nodes</span></div></div>
+      <div class="metric"><span class="metric-icon edges" aria-hidden="true"></span><div class="metric-body"><strong id="edgeCount">0</strong><span>Edges</span></div></div>
+      <div class="metric"><span class="metric-icon memories" aria-hidden="true"></span><div class="metric-body"><strong id="memoryCount">0</strong><span>Memories</span></div></div>
+      <div class="metric"><span class="metric-icon groups" aria-hidden="true"></span><div class="metric-body"><strong id="groupCount">0</strong><span>Groups</span></div></div>
     </section>
-    <div class="status" id="status">Idle</div>
+    <div class="status" id="status" aria-live="polite"></div>
   </header>
 
   <main class="graph-shell">
@@ -580,42 +510,13 @@ GRAPH_UI_HTML = """<!doctype html>
           </label>
         </section>
 
-        <section class="menu-section" aria-label="Graph display controls">
-          <span class="menu-section-title">Display</span>
-          <label class="toggle-control" title="Include vector-neighbor correlation edges">
-            <span>Vector edges</span>
-            <input id="includeVectorCorrelations" type="checkbox" checked>
-          </label>
-          <label class="toggle-control" title="Show detected grouping opportunity nodes">
-            <span>Groups</span>
-            <input id="includeGroupingOpportunities" type="checkbox" checked>
-          </label>
-          <label class="toggle-control" title="Use the dark graph theme">
-            <span>Night mode</span>
-            <input id="nightMode" type="checkbox">
-          </label>
+        <section class="menu-section" aria-label="Graph actions">
+          <span class="menu-section-title">Actions</span>
           <div class="toolbar-actions">
             <button class="primary" id="load">Load</button>
             <button id="spread">Spread</button>
             <button id="fit">Fit</button>
           </div>
-        </section>
-
-        <section class="menu-section menu-section-groups">
-          <span class="menu-section-title">Grouping Opportunities</span>
-          <details class="group-accordion" id="groupAccordion">
-            <summary>
-              <span>Aggregation candidates</span>
-              <strong id="groupPanelCount">0</strong>
-            </summary>
-            <div class="group-empty" id="groupEmpty">Load the graph to inspect detected aggregation candidates.</div>
-            <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
-            <div class="group-panel-head">
-              <span>Detected clusters</span>
-            </div>
-            <div class="group-list" id="groupList"></div>
-            </section>
-          </details>
         </section>
       </div>
     </aside>
@@ -650,19 +551,12 @@ GRAPH_UI_HTML = """<!doctype html>
     const edgeCountEl = document.getElementById("edgeCount");
     const memoryCountEl = document.getElementById("memoryCount");
     const groupCountEl = document.getElementById("groupCount");
-    const groupPanelEl = document.getElementById("groupPanel");
-    const groupEmptyEl = document.getElementById("groupEmpty");
-    const groupPanelCountEl = document.getElementById("groupPanelCount");
-    const groupListEl = document.getElementById("groupList");
     const queryEl = document.getElementById("query");
     const typeEl = document.getElementById("type");
     const limitEl = document.getElementById("limit");
     const scopeEl = document.getElementById("scope");
     const correlationLimitEl = document.getElementById("correlationLimit");
     const maxDegreeEl = document.getElementById("maxDegree");
-    const includeVectorEl = document.getElementById("includeVectorCorrelations");
-    const includeGroupingEl = document.getElementById("includeGroupingOpportunities");
-    const nightModeEl = document.getElementById("nightMode");
 
     let graph = { nodes: [], edges: [], memory_count: 0, grouping_opportunities: [] };
     let nodeById = new Map();
@@ -775,6 +669,7 @@ GRAPH_UI_HTML = """<!doctype html>
     function setStatus(value, isError = false) {
       statusEl.textContent = value;
       statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+      statusEl.dataset.visible = String(Boolean(value) && isError);
     }
 
     function parseScope() {
@@ -796,10 +691,10 @@ GRAPH_UI_HTML = """<!doctype html>
         include_entities: false,
         include_relations: false,
         include_correlations: true,
-        include_vector_correlations: includeVectorEl.checked,
+        include_vector_correlations: true,
         correlation_limit: Number(correlationLimitEl.value || 250),
         max_correlation_degree: Number(maxDegreeEl.value || 6),
-        include_grouping_opportunities: includeGroupingEl.checked,
+        include_grouping_opportunities: true,
         grouping_limit: 8,
         grouping_min_size: 3
       };
@@ -828,7 +723,6 @@ GRAPH_UI_HTML = """<!doctype html>
         edgeCountEl.textContent = graph.edges.length;
         memoryCountEl.textContent = graph.memory_count;
         groupCountEl.textContent = (graph.grouping_opportunities || []).length;
-        renderGroupingOpportunities();
         setLoadedStatus();
       } catch (error) {
         setStatus(error.message, true);
@@ -848,10 +742,7 @@ GRAPH_UI_HTML = """<!doctype html>
     }
 
     function setLoadedStatus() {
-      const hidden = graph.omitted ? `; ${graph.omitted} raw file sections hidden` : "";
-      const groups = (graph.grouping_opportunities || []).length;
-      const groupText = groups ? `; ${groups} grouping opportunities` : "";
-      setStatus(`Loaded ${graph.edges.length} correlations${groupText}${hidden}`);
+      setStatus("");
     }
 
     function hydrateGraph(previousPositions = new Map()) {
@@ -881,30 +772,6 @@ GRAPH_UI_HTML = """<!doctype html>
       hover = null;
       startSimulation();
       scheduleViewportRefresh({ fit: true });
-    }
-
-    function renderGroupingOpportunities() {
-      const groups = graph.grouping_opportunities || [];
-      groupPanelEl.hidden = !groups.length;
-      groupEmptyEl.hidden = Boolean(groups.length);
-      groupPanelCountEl.textContent = groups.length;
-      groupListEl.replaceChildren();
-      for (const group of groups) {
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "group-item";
-        item.dataset.groupNodeId = `group:${group.id}`;
-        const title = document.createElement("strong");
-        title.textContent = group.label;
-        const meta = document.createElement("span");
-        meta.textContent = `${group.member_count} memories - score ${Number(group.score || 0).toFixed(1)} - cohesion ${Number(group.cohesion || 0).toFixed(2)}`;
-        item.append(title, meta);
-        item.addEventListener("click", () => {
-          const node = nodeById.get(item.dataset.groupNodeId);
-          if (node) selectItem(node);
-        });
-        groupListEl.append(item);
-      }
     }
 
     function layoutGraphPositions(nodes, rect) {
@@ -1393,11 +1260,6 @@ GRAPH_UI_HTML = """<!doctype html>
       draw();
     }
 
-    function applyTheme() {
-      document.documentElement.dataset.theme = nightModeEl.checked ? "dark" : "light";
-      draw();
-    }
-
     canvas.addEventListener("pointerdown", (event) => {
       canvas.setPointerCapture(event.pointerId);
       const rect = canvas.getBoundingClientRect();
@@ -1462,9 +1324,6 @@ GRAPH_UI_HTML = """<!doctype html>
     document.getElementById("load").addEventListener("click", loadGraph);
     document.getElementById("spread").addEventListener("click", spreadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
-    includeVectorEl.addEventListener("change", loadGraph);
-    includeGroupingEl.addEventListener("change", loadGraph);
-    nightModeEl.addEventListener("change", applyTheme);
     queryEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter") loadGraph();
     });
@@ -1476,8 +1335,8 @@ GRAPH_UI_HTML = """<!doctype html>
       });
       canvasResizeObserver.observe(canvasShellEl);
     }
-    nightModeEl.checked = true;
-    applyTheme();
+    document.documentElement.dataset.theme = "dark";
+    draw();
     scheduleViewportRefresh({ fit: false });
     loadGraph();
   </script>

@@ -9,6 +9,7 @@ from onebrain_core.contracts.schemas import GraphAggregationResponse
 from onebrain_django.api.management.commands import aggregate_graph_memories, run_scheduled_jobs
 from onebrain_django.jobs.graph_aggregation import GraphAggregationJobConfig
 from onebrain_django.jobs.scheduler import ScheduledJobConfig, run_scheduled_job
+from onebrain_django.jobs.status import JOB_NAME_GRAPH_AGGREGATION, read_job_status
 
 
 def test_graph_aggregation_job_config_builds_core_request() -> None:
@@ -40,8 +41,10 @@ def test_graph_aggregation_job_config_builds_core_request() -> None:
     assert request.scope == {"project": "one-brain", "kind": "aggregate"}
 
 
-def test_aggregate_graph_memories_command_invokes_job(monkeypatch) -> None:
+def test_aggregate_graph_memories_command_invokes_job(monkeypatch, tmp_path) -> None:
     captured = {}
+    status_path = tmp_path / "jobs.json"
+    monkeypatch.setenv("ONEBRAIN_JOB_STATUS_PATH", str(status_path))
 
     class FakeJob:
         async def run_once(self, config):
@@ -62,6 +65,10 @@ def test_aggregate_graph_memories_command_invokes_job(monkeypatch) -> None:
     assert captured["config"].dry_run is True
     assert captured["config"].scope == {"project": "one-brain"}
     assert "scanned 2 opportunities" in stdout.getvalue()
+    status = read_job_status(JOB_NAME_GRAPH_AGGREGATION, path=status_path)
+    assert status is not None
+    assert status["status"] == "success"
+    assert status["result"]["scanned"] == 2
 
 
 @pytest.mark.asyncio
@@ -86,8 +93,32 @@ async def test_run_scheduled_job_runs_max_runs_without_final_sleep() -> None:
     assert sleeps == [5]
 
 
-def test_run_scheduled_jobs_command_invokes_graph_aggregation(monkeypatch) -> None:
+@pytest.mark.asyncio
+async def test_run_scheduled_job_reports_start_and_error() -> None:
+    starts = []
+    errors = []
+
+    async def run_once():
+        raise RuntimeError("broken")
+
+    with pytest.raises(RuntimeError, match="broken"):
+        await run_scheduled_job(
+            config=ScheduledJobConfig(interval_seconds=5, max_runs=1),
+            run_once=run_once,
+            on_start=lambda run_count, started_at: starts.append((run_count, started_at)),
+            on_error=lambda exc, run_count, started_at: errors.append(
+                (str(exc), run_count, started_at)
+            ),
+        )
+
+    assert starts
+    assert errors == [("broken", 1, starts[0][1])]
+
+
+def test_run_scheduled_jobs_command_invokes_graph_aggregation(monkeypatch, tmp_path) -> None:
     captured = {}
+    status_path = tmp_path / "jobs.json"
+    monkeypatch.setenv("ONEBRAIN_JOB_STATUS_PATH", str(status_path))
 
     class FakeJob:
         async def run_once(self, config):
@@ -116,3 +147,7 @@ def test_run_scheduled_jobs_command_invokes_graph_aggregation(monkeypatch) -> No
     assert captured["config"].dry_run is True
     assert "Starting scheduled job graph-aggregation" in output
     assert "scanned 1 opportunities" in output
+    status = read_job_status(JOB_NAME_GRAPH_AGGREGATION, path=status_path)
+    assert status is not None
+    assert status["run_count"] == 1
+    assert status["status"] == "success"

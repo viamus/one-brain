@@ -65,12 +65,21 @@ services:
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
+      ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON: '${ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON:-{"catalog":"private-engineering-catalog","source":"github-private-catalog"}}'
+      ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS: ${ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS:-3600}
+      ONEBRAIN_GRAPH_AGGREGATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_LIMIT:-500}
+      ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT:-750}
+      ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE: ${ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE:-12}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
+      ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
       ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
       ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
     ports:
       - "127.0.0.1:${ONEBRAIN_HTTP_PORT:-8088}:8000"
     volumes:
       - C:/DoxieOS:/mnt/doxie:ro
+      - onebrain_job_status:/var/lib/onebrain/jobs
     command: ["onebrain-django"]
     restart: unless-stopped
     healthcheck:
@@ -101,9 +110,13 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE: ${ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE:-12}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
+      ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+    volumes:
+      - onebrain_job_status:/var/lib/onebrain/jobs
     command: ["onebrain-django", "run_scheduled_jobs", "--job", "graph-aggregation"]
     restart: unless-stopped
 
 volumes:
   postgres_data:
   qdrant_storage:
+  onebrain_job_status:

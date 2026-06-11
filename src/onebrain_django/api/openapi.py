@@ -209,6 +209,43 @@ def openapi_schema() -> Schema:
                 "responses": {"200": json_response(GraphResponse)},
             },
         },
+        "/api/v1/jobs/graph-aggregation/status": {
+            "get": {
+                "summary": "Read graph aggregation job status",
+                "description": (
+                    "Returns the configured graph aggregation schedule, tuning values, "
+                    "and the last persisted run summary when available."
+                ),
+                "operationId": "getGraphAggregationJobStatus",
+                "tags": ["Jobs"],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                    "properties": {
+                                        "job": {"type": "string"},
+                                        "status": {"type": "string"},
+                                        "command": {"type": "string"},
+                                        "scheduler": {"type": "object"},
+                                        "configuration": {"type": "object"},
+                                        "last_run": {
+                                            "oneOf": [{"type": "object"}, {"type": "null"}]
+                                        },
+                                        "next_run_at": {
+                                            "oneOf": [{"type": "string"}, {"type": "null"}]
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+        },
         "/api/v1/context": {
             "post": {
                 "summary": "Compose context pack",

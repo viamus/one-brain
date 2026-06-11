@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 from django.http import HttpRequest, JsonResponse
@@ -28,11 +29,40 @@ from onebrain_django.http import (
     require_api_key,
     validate_payload,
 )
+from onebrain_django.jobs.graph_aggregation import GraphAggregationJobConfig
+from onebrain_django.jobs.scheduler import ScheduledJobConfig
+from onebrain_django.jobs.status import (
+    JOB_NAME_GRAPH_AGGREGATION,
+    graph_aggregation_status_response,
+    read_job_status,
+)
 from onebrain_django.runtime import get_runtime_service, get_runtime_settings
 
 
 async def openapi_json(_request: HttpRequest) -> JsonResponse:
     return json_response(openapi_schema())
+
+
+async def graph_aggregation_job_status(_request: HttpRequest) -> JsonResponse:
+    try:
+        scheduler = ScheduledJobConfig(
+            interval_seconds=float(
+                os.getenv("ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS", "3600")
+            ),
+            max_runs=None,
+            run_immediately=True,
+        )
+        configuration = GraphAggregationJobConfig.from_environment()
+    except ValueError as exc:
+        return error_response(str(exc), status=500)
+
+    return json_response(
+        graph_aggregation_status_response(
+            scheduler=scheduler,
+            configuration=configuration,
+            last_run=read_job_status(JOB_NAME_GRAPH_AGGREGATION),
+        )
+    )
 
 
 @csrf_exempt

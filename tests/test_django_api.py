@@ -7,6 +7,7 @@ from django.test import Client
 
 from onebrain_core.common.config import Settings
 from onebrain_core.contracts.schemas import GraphResponse, SearchResponse
+from onebrain_django.jobs.status import JOB_NAME_GRAPH_AGGREGATION, write_job_status
 from onebrain_django.runtime import clear_runtime_overrides, set_runtime_overrides
 
 API_PREFIX = "/api/v1"
@@ -48,10 +49,16 @@ def test_django_home_serves_workbench_even_when_api_keys_are_configured() -> Non
 
     assert response.status_code == 200
     content = response.content.decode()
-    assert "OneBrain Workbench" in content
     assert 'src="/graph"' in content
-    assert "/api/openapi.json" in content
+    assert "OneBrain Swagger" in content
+    assert "Graph Aggregation Jobs" in content
+    assert "Graph intelligence" in content
+    assert "Graphs" in content
     assert "Swagger" in content
+    assert "Memory graph workbench" not in content
+    assert "Runtime" not in content
+    assert "Open graph" not in content
+    assert "OpenAPI JSON" not in content
 
 
 def test_django_openapi_json_is_public_and_describes_secured_api() -> None:
@@ -63,6 +70,7 @@ def test_django_openapi_json_is_public_and_describes_secured_api() -> None:
     assert payload["info"]["title"] == "OneBrain Django API"
     assert "/api/v1/search" in payload["paths"]
     assert "/api/v1/graph" in payload["paths"]
+    assert "/api/v1/jobs/graph-aggregation/status" in payload["paths"]
     assert "ApiKeyAuth" in payload["components"]["securitySchemes"]
     assert "BearerAuth" in payload["components"]["securitySchemes"]
     assert payload["paths"]["/api/v1/search"]["post"]["security"] == [
@@ -79,6 +87,33 @@ def test_django_post_requires_api_key() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_django_graph_aggregation_job_status_is_public(monkeypatch, tmp_path) -> None:
+    status_path = tmp_path / "jobs.json"
+    monkeypatch.setenv("ONEBRAIN_JOB_STATUS_PATH", str(status_path))
+    write_job_status(
+        JOB_NAME_GRAPH_AGGREGATION,
+        {
+            "status": "success",
+            "run_count": 3,
+            "started_at": "2026-06-11T10:00:00+00:00",
+            "finished_at": "2026-06-11T10:00:02+00:00",
+            "duration_seconds": 2,
+            "scheduler": {"interval_seconds": 3600},
+            "configuration": {"limit": 500},
+            "result": {"scanned": 8, "created": 2, "existing": 1, "skipped": 5},
+            "error": None,
+        },
+    )
+
+    response = Client().get(f"{API_PREFIX}/jobs/graph-aggregation/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["last_run"]["run_count"] == 3
+    assert payload["configuration"]["limit"] == 500
 
 
 def test_django_post_accepts_bearer_api_key() -> None:

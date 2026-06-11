@@ -20,7 +20,9 @@ async def run_scheduled_job(
     *,
     config: ScheduledJobConfig,
     run_once: Callable[[], Awaitable[T]],
+    on_start: Callable[[int, datetime], None] | None = None,
     on_result: Callable[[T, int, datetime], None] | None = None,
+    on_error: Callable[[BaseException, int, datetime], None] | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     run_count = 0
@@ -30,7 +32,14 @@ async def run_scheduled_job(
     while config.max_runs is None or run_count < config.max_runs:
         run_count += 1
         started_at = datetime.now(UTC)
-        result = await run_once()
+        if on_start is not None:
+            on_start(run_count, started_at)
+        try:
+            result = await run_once()
+        except BaseException as exc:
+            if on_error is not None:
+                on_error(exc, run_count, started_at)
+            raise
         if on_result is not None:
             on_result(result, run_count, started_at)
         if config.max_runs is not None and run_count >= config.max_runs:
