@@ -2,25 +2,53 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from django.core.management import call_command
 
 from onebrain_core.contracts.schemas import GraphAggregationResponse
-from onebrain_django.api.management.commands import aggregate_graph_memories
+from onebrain_django.api.management.commands import aggregate_graph_memories, run_scheduled_jobs
+from onebrain_django.jobs.graph_aggregation import GraphAggregationJobConfig
+from onebrain_django.jobs.scheduler import ScheduledJobConfig, run_scheduled_job
 
 
-def test_aggregate_graph_memories_command_invokes_service(monkeypatch) -> None:
+def test_graph_aggregation_job_config_builds_core_request() -> None:
+    config = GraphAggregationJobConfig.from_options(
+        {
+            "scope_json": '{"project": "one-brain"}',
+            "aggregate_scope_json": '{"project": "one-brain", "kind": "aggregate"}',
+            "memory_type": "context",
+            "limit": 500,
+            "correlation_limit": 750,
+            "max_degree": 12,
+            "grouping_limit": 25,
+            "grouping_min_size": 4,
+            "min_score": 10,
+            "dry_run": True,
+            "source_type": "graph-aggregation",
+            "link_type": "aggregates",
+        }
+    )
+
+    request = config.to_request()
+
+    assert request.dry_run is True
+    assert request.min_member_count == 4
+    assert request.min_score == 10
+    assert request.graph.filters.scope == {"project": "one-brain"}
+    assert request.graph.filters.memory_types == ["context"]
+    assert request.graph.grouping_limit == 25
+    assert request.scope == {"project": "one-brain", "kind": "aggregate"}
+
+
+def test_aggregate_graph_memories_command_invokes_job(monkeypatch) -> None:
     captured = {}
 
-    class FakeService:
-        async def materialize_grouping_opportunities(self, request):
-            captured["request"] = request
+    class FakeJob:
+        async def run_once(self, config):
+            captured["config"] = config
             return GraphAggregationResponse(dry_run=True, graph_memory_count=10, scanned=2)
 
-    async def fake_close_runtime() -> None:
-        captured["closed"] = True
-
-    monkeypatch.setattr(aggregate_graph_memories, "get_runtime_service", lambda: FakeService())
-    monkeypatch.setattr(aggregate_graph_memories, "close_runtime", fake_close_runtime)
+    monkeypatch.setattr(aggregate_graph_memories, "GraphAggregationJob", lambda: FakeJob())
 
     stdout = io.StringIO()
     call_command(
@@ -31,9 +59,60 @@ def test_aggregate_graph_memories_command_invokes_service(monkeypatch) -> None:
         stdout=stdout,
     )
 
-    request = captured["request"]
-    assert request.dry_run is True
-    assert request.graph.filters.scope == {"project": "one-brain"}
-    assert request.graph.include_grouping_opportunities is True
-    assert captured["closed"] is True
+    assert captured["config"].dry_run is True
+    assert captured["config"].scope == {"project": "one-brain"}
     assert "scanned 2 opportunities" in stdout.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_job_runs_max_runs_without_final_sleep() -> None:
+    calls = []
+    sleeps = []
+
+    async def run_once():
+        calls.append("run")
+        return len(calls)
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    await run_scheduled_job(
+        config=ScheduledJobConfig(interval_seconds=5, max_runs=2),
+        run_once=run_once,
+        sleep=fake_sleep,
+    )
+
+    assert calls == ["run", "run"]
+    assert sleeps == [5]
+
+
+def test_run_scheduled_jobs_command_invokes_graph_aggregation(monkeypatch) -> None:
+    captured = {}
+
+    class FakeJob:
+        async def run_once(self, config):
+            captured["config"] = config
+            return GraphAggregationResponse(dry_run=True, graph_memory_count=10, scanned=1)
+
+    monkeypatch.setattr(run_scheduled_jobs, "GraphAggregationJob", lambda: FakeJob())
+
+    stdout = io.StringIO()
+    call_command(
+        "run_scheduled_jobs",
+        "--job",
+        "graph-aggregation",
+        "--scope-json",
+        '{"project": "one-brain"}',
+        "--dry-run",
+        "--interval-seconds",
+        "0",
+        "--max-runs",
+        "1",
+        stdout=stdout,
+    )
+
+    output = stdout.getvalue()
+    assert captured["config"].scope == {"project": "one-brain"}
+    assert captured["config"].dry_run is True
+    assert "Starting scheduled job graph-aggregation" in output
+    assert "scanned 1 opportunities" in output

@@ -233,6 +233,41 @@ Core routes:
 
 The older `/v1/*` path is still routed by Django as a compatibility alias. New integrations should use `/api/v1/*`.
 
+### Graph Aggregation Job
+
+Grouping opportunities detected by the graph can be materialized as aggregate `context` memories.
+The core aggregation logic lives in `onebrain_core`; Django owns the operational job runner under
+`onebrain_django/jobs`.
+
+Run a one-shot aggregation:
+
+```powershell
+uv run onebrain-django aggregate_graph_memories `
+  --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}' `
+  --grouping-limit 25 `
+  --correlation-limit 750
+```
+
+Run the scheduler locally:
+
+```powershell
+uv run onebrain-django run_scheduled_jobs `
+  --job graph-aggregation `
+  --interval-seconds 3600 `
+  --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}'
+```
+
+Docker Compose also includes a `graph-aggregation-job` service. It runs the same scheduler with
+environment-configurable defaults:
+
+- `ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON`
+- `ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS`
+- `ONEBRAIN_GRAPH_AGGREGATION_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE`
+- `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE`
+
 ### Contextual Ingestion API
 
 The ingestion API is intentionally two-phase. First analyze files into a plan with macro context memories and child section memories. Then commit the reviewed plan into OneBrain, creating explicit `contains` links between parent and child memories.

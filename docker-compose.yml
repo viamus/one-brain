@@ -79,6 +79,31 @@ services:
       timeout: 5s
       retries: 5
 
+  graph-aggregation-job:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
+      ONEBRAIN_QDRANT_URL: http://qdrant:6333
+      DJANGO_SETTINGS_MODULE: onebrain_django.settings
+      ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON: '${ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON:-{"catalog":"private-engineering-catalog","source":"github-private-catalog"}}'
+      ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS: ${ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS:-3600}
+      ONEBRAIN_GRAPH_AGGREGATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_LIMIT:-500}
+      ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT:-750}
+      ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE: ${ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE:-12}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
+      ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
+    command: ["onebrain-django", "run_scheduled_jobs", "--job", "graph-aggregation"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   qdrant_storage:
