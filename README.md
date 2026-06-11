@@ -237,6 +237,35 @@ The older `/v1/*` path is still routed by Django as a compatibility alias. New i
 
 The ingestion API is intentionally two-phase. First analyze files into a plan with macro context memories and child section memories. Then commit the reviewed plan into OneBrain, creating explicit `contains` links between parent and child memories.
 
+### Local Codex Context Importer
+
+Use the local importer when the files live on your machine and you want Codex CLI to explain what
+each source file means before OneBrain stores it. The importer runs outside the online request path:
+Codex CLI prepares richer file-level context locally, then the importer calls the Django API
+`/api/v1/ingestion/analyze` and `/api/v1/ingestion/commit`.
+
+When Docker serves the API, pass the local path and let the importer translate host paths into
+container paths. By default it knows `C:\DoxieOS=/mnt/doxie`; override with `--path-mappings` or
+`--api-path` when needed.
+
+```powershell
+$env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"organization":"abinbev","catalog":"private-engineering-catalog"}'
+uv run onebrain-local-import C:\DoxieOS\github-private-catalog\libraries\ambevtech-developer-memory `
+  --api-url http://127.0.0.1:8088/api/v1 `
+  --api-key $env:ONEBRAIN_MCP_CLIENT_KEY `
+  --source-type private-catalog-library `
+  --source-ref-prefix catalog://private/libraries/ambevtech-developer-memory `
+  --exclude-examples
+```
+
+Useful switches:
+
+- `--dry-run`: contextualize and send a dry-run commit request without creating memories.
+- `--analyze-only`: contextualize the plan and print it without calling commit.
+- `--codex-model`: choose a Codex model for local contextualization.
+- `--scope-json-file`: load scope from a UTF-8 JSON file when shell quoting is inconvenient.
+- `--skip-codex`: use deterministic fallback context when debugging API import mechanics.
+
 Analyze a catalog library from Docker:
 
 ```powershell

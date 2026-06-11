@@ -47,6 +47,7 @@ dev = [
 [project.scripts]
 onebrain-django = "onebrain_django.manage:run"
 onebrain-mcp = "onebrain_django.mcp.server:run_stdio"
+onebrain-local-import = "onebrain_core.ingestion.local_importer:main"
 
 [build-system]
 requires = ["hatchling"]
