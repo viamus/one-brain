@@ -5,10 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from onebrain.graph_ui import graph_view_html
-from onebrain.models import Entity, Memory
-from onebrain.schemas import GraphEdge, GraphNode, GraphRequest, GraphResponse, SearchRequest
-from onebrain.service import OneBrainService
+from onebrain_core.application.service import OneBrainService
+from onebrain_core.contracts.schemas import (
+    GraphEdge,
+    GraphNode,
+    GraphRequest,
+    GraphResponse,
+    SearchRequest,
+)
+from onebrain_core.infrastructure.models import Entity, Memory
+from onebrain_django.web.graph_ui import graph_view_html
 
 
 def test_graph_request_normalizes_blank_query() -> None:
@@ -347,6 +353,147 @@ def test_graph_insights_annotate_centroid_candidates() -> None:
     assert nodes[center_id].weight > 1.0
 
 
+def test_memory_graph_label_derives_source_context_for_generic_document_body() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="Document body",
+        content=(
+            "# Document body\n\n"
+            "Summary: Canonical Python entry point keeps FastAPI tracing stable.\n\n"
+            "Source document: sources/platform/runtime.md\n"
+            "Parent context: Runtime platform\n\n"
+            "Details."
+        ),
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:child"],
+        confidence=0.8,
+        source_type="private-catalog-library",
+        source_ref="catalog://private/libraries/platform/sources/platform/runtime.md#section-1",
+        metadata_={
+            "relative_path": "sources/platform/runtime.md",
+            "order_index": 1,
+            "summary": "Canonical Python entry point keeps FastAPI tracing stable.",
+        },
+    )
+
+    node = service._memory_graph_node(memory)
+
+    assert node.label == "runtime.md: Canonical Python entry point keeps FastAPI tracing stable."
+    assert node.label != "Document body"
+
+
+def test_memory_graph_label_uses_source_ref_when_generic_metadata_is_missing() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="Document",
+        content="No useful headings.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=[],
+        confidence=0.8,
+        source_type="private-catalog-library",
+        source_ref="catalog://private/libraries/platform/sources/platform/runtime.md#section-1",
+    )
+
+    assert service._memory_label(memory) == "runtime.md"
+
+
+@pytest.mark.asyncio
+async def test_build_graph_omits_ingestion_child_memories() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    context = Memory(
+        id=uuid.uuid4(),
+        memory_type="context",
+        title="Runtime platform",
+        content="Macro context with source references.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:macro"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+        metadata_={"ingestion_item_type": "document"},
+    )
+    child = Memory(
+        id=uuid.uuid4(),
+        memory_type="fact",
+        title="runtime.md: section 1",
+        content="Detailed file body.",
+        content_hash="b",
+        scope={"project": "one-brain"},
+        tags=["ingestion:child"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+        metadata_={"ingestion_item_type": "section"},
+    )
+
+    async def fake_graph_memories(request: GraphRequest):
+        return [child, context]
+
+    service._graph_memories = fake_graph_memories
+
+    result = await service.build_graph(
+        GraphRequest(include_entities=False, include_relations=False, include_correlations=False)
+    )
+
+    assert [node.label for node in result.nodes] == ["Runtime platform"]
+    assert result.memory_count == 1
+    assert result.omitted == 1
+
+
+@pytest.mark.asyncio
+async def test_build_graph_omits_source_document_entities() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory_id = uuid.uuid4()
+    memory = Memory(
+        id=memory_id,
+        memory_type="context",
+        title="Runtime platform",
+        content="Macro context with source references.",
+        content_hash="a",
+        scope={"project": "one-brain"},
+        tags=["ingestion:macro"],
+        confidence=0.88,
+        source_type="private-catalog-library",
+    )
+    source_document = Entity(
+        id=uuid.uuid4(),
+        name="sources/platform/runtime.md",
+        normalized_name="sources/platform/runtime.md",
+        entity_type="source_document",
+    )
+    concept = Entity(
+        id=uuid.uuid4(),
+        name="Runtime platform",
+        normalized_name="runtime platform",
+        entity_type="concept",
+    )
+
+    async def fake_graph_memories(request: GraphRequest):
+        return [memory]
+
+    async def fake_graph_memory_entities(memory_ids: set[uuid.UUID]):
+        return [
+            (memory_id, "source", source_document),
+            (memory_id, "subject", concept),
+        ]
+
+    service._graph_memories = fake_graph_memories
+    service._graph_memory_entities = fake_graph_memory_entities
+
+    result = await service.build_graph(
+        GraphRequest(include_entities=True, include_relations=False, include_correlations=False)
+    )
+
+    assert {node.label for node in result.nodes} == {"Runtime platform"}
+    assert all(node.subtype != "source_document" for node in result.nodes)
+    assert result.entity_count == 1
+
+
 @pytest.mark.asyncio
 async def test_graph_query_caps_internal_search_limit() -> None:
     service = OneBrainService.__new__(OneBrainService)
@@ -394,3 +541,31 @@ def test_graph_view_html_points_to_graph_endpoint() -> None:
     assert "include_relations: false" in html
     assert "apiKey" not in html
     assert "detailsJson" not in html
+
+
+def test_graph_view_html_exposes_correlation_controls() -> None:
+    html = graph_view_html()
+
+    assert 'id="includeVectorCorrelations" type="checkbox" checked' in html
+    assert 'id="correlationLimit" type="number" min="0" max="2000"' in html
+    assert 'id="maxDegree" type="number" min="1" max="50"' in html
+    assert "include_vector_correlations: includeVectorEl.checked" in html
+    assert "correlation_limit: Number(correlationLimitEl.value || 250)" in html
+    assert "max_correlation_degree: Number(maxDegreeEl.value || 6)" in html
+
+
+def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> None:
+    html = graph_view_html()
+
+    assert ':root[data-theme="dark"]' in html
+    assert 'id="nightMode" type="checkbox"' in html
+    assert 'class="legend-title">Legend</span>' in html
+    assert 'id="spread"' in html
+    assert "document.documentElement.dataset.theme" in html
+    assert "centroid_candidate" in html
+    assert "grouping_opportunity" in html
+    assert "function edgeIsFocused(edge)" in html
+    assert "ctx.shadowBlur = 14" in html
+    assert "function layoutGraphPositions(nodes, rect)" in html
+    assert "cancelAnimationFrame(animationFrameId)" in html
+    assert "animationFrameId = requestAnimationFrame(tick)" in html

@@ -11,10 +11,10 @@ uv sync --dev
 uv run alembic upgrade head
 ```
 
-Run the API locally:
+Run the Django web/API locally:
 
 ```powershell
-uv run uvicorn onebrain.api:app --host 127.0.0.1 --port 8080
+uv run onebrain-django
 ```
 
 Run the full Docker stack:
@@ -38,7 +38,7 @@ uv run pytest -q
 - Keep OneBrain's online path deterministic. Do not add LLM calls to context composition or retrieval.
 - Keep PostgreSQL as the canonical source of truth.
 - Keep Qdrant as an index, not the only source of memory data.
-- Keep MCP servers as thin HTTP API adapters. They should not connect to PostgreSQL or Qdrant directly.
+- Keep MCP servers thin and deterministic.
 - Add migrations for schema changes.
 - Keep authentication and secret handling explicit.
 - Do not commit `.env`, credentials, generated caches, or local database files.

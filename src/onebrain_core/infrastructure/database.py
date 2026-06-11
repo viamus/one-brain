@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from onebrain.config import Settings
+from onebrain_core.common.config import Settings
 
 
 def create_engine(settings: Settings) -> AsyncEngine:

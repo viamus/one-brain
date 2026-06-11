@@ -19,6 +19,6 @@ COPY migrations ./migrations
 
 RUN uv sync --frozen --no-dev --no-editable
 
-EXPOSE 8080 8090
+EXPOSE 8000
 
-CMD ["onebrain-mcp-http"]
+CMD ["onebrain-django"]

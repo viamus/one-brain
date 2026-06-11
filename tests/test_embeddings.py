@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from onebrain.embeddings import HashEmbeddingProvider
+from onebrain_core.infrastructure.embeddings import HashEmbeddingProvider
 
 
 @pytest.mark.asyncio

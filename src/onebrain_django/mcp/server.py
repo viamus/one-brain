@@ -1,24 +1,16 @@
 from __future__ import annotations
 
-import secrets
 import uuid
 from typing import Any
 
-import uvicorn
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy.ext.asyncio import AsyncEngine
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
 
-from onebrain.config import get_settings
-from onebrain.db import create_engine
-from onebrain.logging import configure_logging
-from onebrain.memory_hardening import harden_memory_payload
-from onebrain.memory_importer import add_hardened_memory, import_memory_files
-from onebrain.path_mapping import resolve_mapped_path
-from onebrain.runtime import build_service
-from onebrain.schemas import (
+from onebrain_core.application.memory_hardening import harden_memory_payload
+from onebrain_core.application.memory_importer import add_hardened_memory, import_memory_files
+from onebrain_core.application.service import OneBrainService
+from onebrain_core.application.skills import add_hardened_skill, harden_skill_payload
+from onebrain_core.common.path_mapping import resolve_mapped_path
+from onebrain_core.contracts.schemas import (
     ContextRequest,
     CorrelationRequest,
     GraphRequest,
@@ -26,11 +18,7 @@ from onebrain.schemas import (
     SearchFilters,
     SearchRequest,
 )
-from onebrain.service import OneBrainService
-from onebrain.skills import add_hardened_skill, harden_skill_payload
-
-HEALTH_PATH = "/healthz"
-READY_PATH = "/readyz"
+from onebrain_django.runtime import close_runtime, get_runtime_service, get_runtime_settings
 
 mcp = FastMCP(
     "OneBrain",
@@ -41,9 +29,6 @@ mcp = FastMCP(
         "decisions, workflows, skills, or pitfalls."
     ),
 )
-
-_engine: AsyncEngine | None = None
-_service: OneBrainService | None = None
 
 
 class OneBrainServiceClient:
@@ -64,49 +49,8 @@ class OneBrainServiceClient:
         return memory.model_dump(mode="json")
 
 
-class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(
-        self,
-        app: Any,
-        *,
-        accepted_keys: list[str],
-        required: bool,
-    ) -> None:
-        super().__init__(app)
-        self.accepted_keys = accepted_keys
-        self.required = required
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        if request.url.path in {HEALTH_PATH, READY_PATH} or request.method == "OPTIONS":
-            return await call_next(request)
-        if not self.required:
-            return await call_next(request)
-        if not self.accepted_keys:
-            return JSONResponse(
-                {"detail": "MCP API key authentication is not configured"},
-                status_code=503,
-            )
-
-        candidate = request.headers.get("x-api-key", "")
-        authorization = request.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer "):
-            candidate = authorization[7:].strip()
-
-        if not candidate:
-            return JSONResponse({"detail": "missing API key"}, status_code=401)
-        if not any(secrets.compare_digest(candidate, key) for key in self.accepted_keys):
-            return JSONResponse({"detail": "invalid API key"}, status_code=403)
-        return await call_next(request)
-
-
 def get_service() -> OneBrainService:
-    global _engine, _service
-    if _service is None:
-        settings = get_settings()
-        configure_logging(settings.log_level)
-        _engine = create_engine(settings)
-        _service = build_service(settings, _engine)
-    return _service
+    return get_runtime_service()
 
 
 def get_service_client() -> OneBrainServiceClient:
@@ -114,24 +58,7 @@ def get_service_client() -> OneBrainServiceClient:
 
 
 async def dispose_service() -> None:
-    global _engine, _service
-    if _engine is not None:
-        await _engine.dispose()
-    _engine = None
-    _service = None
-
-
-@mcp.custom_route(HEALTH_PATH, methods=["GET"], include_in_schema=False)
-async def healthz(_: Request) -> Response:
-    return JSONResponse({"status": "ok"})
-
-
-@mcp.custom_route(READY_PATH, methods=["GET"], include_in_schema=False)
-async def readyz(_: Request) -> Response:
-    try:
-        return JSONResponse(await get_service().health())
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"detail": str(exc)}, status_code=503)
+    await close_runtime()
 
 
 @mcp.tool()
@@ -251,7 +178,7 @@ async def onebrain_import_memory_files(
 ) -> dict[str, Any]:
     """Import text memories from a file or folder with hardening and source_ref dedupe."""
 
-    settings = get_settings()
+    settings = get_runtime_settings()
     resolved_path = resolve_mapped_path(path, settings.mcp_path_mappings)
     result = await import_memory_files(
         get_service_client(),
@@ -363,16 +290,9 @@ async def onebrain_correlate(
     return result.model_dump(mode="json")
 
 
-def run() -> None:
+def build_mcp_asgi_app() -> Any:
+    return mcp.streamable_http_app()
+
+
+def run_stdio() -> None:
     mcp.run()
-
-
-def run_http() -> None:
-    settings = get_settings()
-    app = mcp.streamable_http_app()
-    app.add_middleware(
-        ApiKeyAuthMiddleware,
-        accepted_keys=settings.api_key_values,
-        required=settings.mcp_require_api_key,
-    )
-    uvicorn.run(app, host=settings.mcp_host, port=settings.mcp_port, log_level="info")

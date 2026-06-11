@@ -7,7 +7,7 @@ from typing import Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qm
 
-from onebrain.config import Settings
+from onebrain_core.common.config import Settings
 
 
 @dataclass(frozen=True)
