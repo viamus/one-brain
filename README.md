@@ -239,10 +239,11 @@ The ingestion API is intentionally two-phase. First analyze files into a plan wi
 
 ### Local Codex Context Importer
 
-Use the local importer when the files live on your machine and you want Codex CLI to explain what
-each source file means before OneBrain stores it. The importer runs outside the online request path:
-Codex CLI prepares richer file-level context locally, then the importer calls the Django API
-`/api/v1/ingestion/analyze` and `/api/v1/ingestion/commit`.
+Use the local importer when source docs live on your machine and you want Codex CLI to learn,
+categorize, and prepare durable knowledge before OneBrain stores it. The importer runs outside the
+online request path: Codex CLI reads local docs as source evidence, creates richer knowledge
+context locally, then the importer calls the Django API `/api/v1/ingestion/analyze` and
+`/api/v1/ingestion/commit`.
 
 When Docker serves the API, pass the local path and let the importer translate host paths into
 container paths. By default it knows `C:\DoxieOS=/mnt/doxie`; override with `--path-mappings` or
@@ -267,8 +268,8 @@ Useful switches:
 - `--scope-json-file`: load scope from a UTF-8 JSON file when shell quoting is inconvenient.
 - `--skip-codex`: use deterministic fallback context when debugging API import mechanics.
 
-By default the importer reads every eligible file under `--docs`. Use `--max-files` only for smoke
-tests or partial imports.
+By default the importer learns from every eligible source document under `--docs`. Use
+`--max-files` only for smoke tests or partial imports.
 
 Analyze a catalog library from Docker:
 

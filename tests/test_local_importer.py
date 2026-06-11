@@ -8,11 +8,13 @@ from onebrain_cli import local_importer
 from onebrain_cli.local_importer import (
     CodexCliContextualizer,
     CodexCliOptions,
-    FileContext,
-    FileEntityContext,
+    KnowledgeContext,
+    KnowledgeEntityContext,
     LocalImportOptions,
+    _context_prompt,
+    _knowledge_context_schema,
     _load_scope,
-    _parse_file_context,
+    _parse_knowledge_context,
     _resolve_docs_path,
     run_local_import,
 )
@@ -61,26 +63,27 @@ class FakeContextualizer:
         macro_item: IngestionItem,
         child_items: list[IngestionItem],
         redact_secrets: bool,
-    ) -> FileContext:
+    ) -> KnowledgeContext:
         assert root_path
         assert macro_item.item_type == "document"
         assert child_items
         assert redact_secrets is True
         self.calls.append(document.relative_path)
-        return FileContext(
+        return KnowledgeContext(
             title="Release orchestration context",
             summary="Explains how release orchestration coordinates build and deployment gates.",
             purpose=(
-                "Help agents understand release flow responsibilities before using file details."
+                "Help agents understand release flow responsibilities before using source evidence."
             ),
             domain="release engineering",
+            category="workflow guidance",
             key_topics=["Release Train", "Build Gates", "Deployment"],
             important_sections=["Build", "Deploy"],
             entities=[
-                FileEntityContext(
+                KnowledgeEntityContext(
                     name="Release Train",
                     entity_type="concept",
-                    summary="Release coordination process described by the file.",
+                    summary="Release coordination process described by the source evidence.",
                 )
             ],
             tags=["release-flow"],
@@ -130,10 +133,14 @@ async def test_local_import_enriches_ingestion_plan_before_api_commit(tmp_path) 
     assert "release-flow" in macro.payload.tags
     assert macro.payload.metadata["contextualized"] is True
     assert macro.payload.metadata["domain"] == "release engineering"
+    assert macro.payload.metadata["knowledge_category"] == "workflow guidance"
+    assert "category:workflow-guidance" in macro.payload.tags
+    assert "knowledge:imported" in macro.payload.tags
     assert any(entity.name == "Release Train" for entity in macro.payload.entities)
 
     assert children
-    assert children[0].payload.content.startswith("Parent file context:")
+    assert children[0].payload.content.startswith("Parent knowledge context:")
+    assert children[0].payload.metadata["parent_knowledge_category"] == "workflow guidance"
     assert children[0].payload.metadata["parent_context_topics"] == [
         "Release Train",
         "Build Gates",
@@ -160,21 +167,22 @@ async def test_local_import_supports_dry_run_commit(tmp_path) -> None:
     assert result.commit.created == 0
 
 
-def test_parse_file_context_accepts_fenced_json() -> None:
-    context = _parse_file_context(
+def test_parse_knowledge_context_accepts_fenced_json() -> None:
+    context = _parse_knowledge_context(
         """```json
         {
           "title": "Mediator XML context",
           "summary": "Explains mediator XML mapping contracts.",
           "purpose": "Help agents understand why mediator XML exists.",
           "domain": "integration",
+          "category": "contract knowledge",
           "key_topics": ["Mediator", "XML"],
           "important_sections": ["Mappings"],
           "entities": [
             {
               "name": "Mediator",
               "entity_type": "technology",
-              "summary": "Integration mediator mentioned by the file."
+              "summary": "Integration mediator mentioned by the source evidence."
             }
           ],
           "tags": ["integration"],
@@ -186,6 +194,53 @@ def test_parse_file_context_accepts_fenced_json() -> None:
     assert context.title == "Mediator XML context"
     assert context.entities[0].name == "Mediator"
     assert context.key_topics == ["Mediator", "XML"]
+
+
+def test_knowledge_prompt_treats_docs_as_source_evidence() -> None:
+    document = IngestionDocument(
+        id="document-1",
+        relative_path="docs/rule.md",
+        source_ref="catalog://docs/rule.md",
+        title="Rule",
+        summary="Initial summary",
+        content_hash="hash",
+        byte_length=42,
+        item_count=1,
+    )
+    macro = IngestionItem(
+        id="item-1",
+        document_id=document.id,
+        order_index=0,
+        item_type="document",
+        memory_type="context",
+        title="Rule",
+        summary="Initial summary",
+        source_ref="catalog://docs/rule.md#document",
+        payload={
+            "memory_type": "context",
+            "title": "Rule",
+            "content": "Rule content",
+            "source": {"source_type": "test", "source_ref": "catalog://docs/rule.md"},
+        },
+    )
+
+    prompt = _context_prompt(
+        document=document,
+        macro_item=macro,
+        child_items=[],
+        file_text="Use this as source evidence.",
+    )
+
+    assert "You are not importing a file body" in prompt
+    assert "<source_evidence>" in prompt
+    assert "Synthesize what the material teaches" in prompt
+
+
+def test_knowledge_context_schema_requires_category() -> None:
+    schema = _knowledge_context_schema()
+
+    assert "category" in schema["required"]
+    assert schema["properties"]["category"]["maxLength"] == 120
 
 
 def test_codex_cli_contextualizer_uses_top_level_approval_and_utf8(monkeypatch, tmp_path) -> None:
@@ -201,6 +256,7 @@ def test_codex_cli_contextualizer_uses_top_level_approval_and_utf8(monkeypatch, 
               "summary": "Handles UTF-8 prompt and response text.",
               "purpose": "Avoid Windows console encoding failures.",
               "domain": "developer tooling",
+              "category": "tooling rule",
               "key_topics": ["UTF-8", "Codex CLI"],
               "important_sections": ["Encoding"],
               "entities": [],
@@ -223,7 +279,7 @@ def test_codex_cli_contextualizer_uses_top_level_approval_and_utf8(monkeypatch, 
     output = contextualizer._run_codex(
         "Texto com acentua\u00e7\u00e3o e s\u00edmbolo \uc801.", tmp_path
     )
-    parsed = _parse_file_context(output)
+    parsed = _parse_knowledge_context(output)
 
     args = calls["args"]
     assert args.index("--ask-for-approval") < args.index("exec")

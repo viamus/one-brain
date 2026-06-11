@@ -35,20 +35,21 @@ DEFAULT_API_URL = "http://127.0.0.1:8088/api/v1"
 DEFAULT_PATH_MAPPINGS = r"C:\DoxieOS=/mnt/doxie"
 
 
-class FileEntityContext(BaseModel):
+class KnowledgeEntityContext(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     entity_type: str = Field(default="concept", min_length=1, max_length=64)
     summary: str = Field(default="", max_length=360)
 
 
-class FileContext(BaseModel):
+class KnowledgeContext(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     summary: str = Field(min_length=1, max_length=700)
     purpose: str = Field(min_length=1, max_length=900)
     domain: str = Field(default="", max_length=120)
+    category: str = Field(default="", max_length=120)
     key_topics: list[str] = Field(default_factory=list, max_length=12)
     important_sections: list[str] = Field(default_factory=list, max_length=12)
-    entities: list[FileEntityContext] = Field(default_factory=list, max_length=12)
+    entities: list[KnowledgeEntityContext] = Field(default_factory=list, max_length=12)
     tags: list[str] = Field(default_factory=list, max_length=12)
     confidence: float = Field(default=0.84, ge=0.0, le=1.0)
 
@@ -62,7 +63,7 @@ class Contextualizer(Protocol):
         macro_item: IngestionItem,
         child_items: list[IngestionItem],
         redact_secrets: bool,
-    ) -> FileContext: ...
+    ) -> KnowledgeContext: ...
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,7 @@ class HeuristicContextualizer:
         macro_item: IngestionItem,
         child_items: list[IngestionItem],
         redact_secrets: bool,
-    ) -> FileContext:
+    ) -> KnowledgeContext:
         del root_path, redact_secrets
         section_titles = [item.title for item in child_items[:8]]
         topics = _unique_compact(
@@ -171,22 +172,23 @@ class HeuristicContextualizer:
             ],
             limit=8,
         )
-        return FileContext(
+        return KnowledgeContext(
             title=macro_item.title,
             summary=macro_item.summary,
-            purpose=f"Context memory for {document.relative_path}.",
-            domain="local import",
+            purpose="Preserve reusable knowledge learned from source documentation.",
+            domain=_heuristic_domain(topics),
+            category=_heuristic_category(document, topics),
             key_topics=topics,
             important_sections=section_titles,
             entities=[
-                FileEntityContext(
+                KnowledgeEntityContext(
                     name=topic,
                     entity_type="concept",
-                    summary=f"Topic inferred from {document.relative_path}.",
+                    summary="Knowledge topic inferred from source evidence.",
                 )
                 for topic in topics[:6]
             ],
-            tags=["contextualized", "local-import"],
+            tags=["knowledge-import", "contextualized"],
             confidence=0.64,
         )
 
@@ -203,7 +205,7 @@ class CodexCliContextualizer:
         macro_item: IngestionItem,
         child_items: list[IngestionItem],
         redact_secrets: bool,
-    ) -> FileContext:
+    ) -> KnowledgeContext:
         file_path = _local_file_path(root_path, document.relative_path)
         text = _read_text(file_path)
         if redact_secrets:
@@ -216,14 +218,14 @@ class CodexCliContextualizer:
         )
         cwd = await asyncio.to_thread(_codex_cwd, root_path)
         output = await asyncio.to_thread(self._run_codex, prompt, cwd)
-        return _parse_file_context(output)
+        return _parse_knowledge_context(output)
 
     def _run_codex(self, prompt: str, cwd: Path) -> str:
         command = _codex_command(self._options.command)
         with tempfile.TemporaryDirectory(prefix="onebrain-codex-") as temp_dir:
-            schema_path = Path(temp_dir) / "file-context.schema.json"
+            schema_path = Path(temp_dir) / "knowledge-context.schema.json"
             output_path = Path(temp_dir) / "context.json"
-            schema_path.write_text(json.dumps(_file_context_schema()), encoding="utf-8")
+            schema_path.write_text(json.dumps(_knowledge_context_schema()), encoding="utf-8")
             args = [
                 *command,
                 "--ask-for-approval",
@@ -324,7 +326,7 @@ async def enrich_plan_with_context(
         items_by_document.setdefault(item.document_id, []).append(item)
 
     enriched_items: list[IngestionItem] = []
-    contexts: dict[str, tuple[FileContext, str]] = {}
+    contexts: dict[str, tuple[KnowledgeContext, str]] = {}
     warnings: list[str] = []
     fallback_contextualizations = 0
 
@@ -383,7 +385,7 @@ async def enrich_plan_with_context(
 
 
 def _enriched_macro_item(
-    item: IngestionItem, context: FileContext, contextualizer_name: str
+    item: IngestionItem, context: KnowledgeContext, contextualizer_name: str
 ) -> IngestionItem:
     payload = item.payload.model_copy(deep=True)
     payload.title = context.title
@@ -391,6 +393,7 @@ def _enriched_macro_item(
     payload.tags = _merge_tags(
         payload.tags,
         [
+            "knowledge:imported",
             "ingestion:contextualized",
             f"contextualizer:{_tag_slug(contextualizer_name)}",
             *_context_tags(context, contextualizer_name),
@@ -403,11 +406,12 @@ def _enriched_macro_item(
         "summary": context.summary,
         "purpose": context.purpose,
         "domain": context.domain,
+        "knowledge_category": context.category,
         "key_topics": context.key_topics,
-        "important_sections": context.important_sections,
+        "supporting_evidence": context.important_sections,
         "contextualizer": contextualizer_name,
         "contextualized": True,
-        "ingestion_version": "contextual-v2",
+        "ingestion_version": "knowledge-v3",
     }
     payload = MemoryCreate.model_validate(payload.model_dump(mode="json"))
     return item.model_copy(
@@ -429,21 +433,26 @@ def _enriched_macro_item(
 
 
 def _enriched_child_item(
-    item: IngestionItem, context: FileContext, contextualizer_name: str
+    item: IngestionItem, context: KnowledgeContext, contextualizer_name: str
 ) -> IngestionItem:
     payload = item.payload.model_copy(deep=True)
     payload.content = _child_content(payload.content, context)
     payload.tags = _merge_tags(
         payload.tags,
-        ["context-linked", f"contextualizer:{_tag_slug(contextualizer_name)}"],
+        [
+            "knowledge:evidence",
+            "context-linked",
+            f"contextualizer:{_tag_slug(contextualizer_name)}",
+        ],
     )
     payload.metadata = {
         **payload.metadata,
         "parent_context_summary": context.summary,
         "parent_context_purpose": context.purpose,
+        "parent_knowledge_category": context.category,
         "parent_context_topics": context.key_topics,
         "contextualizer": contextualizer_name,
-        "ingestion_version": "contextual-v2",
+        "ingestion_version": "knowledge-v3",
     }
     payload = MemoryCreate.model_validate(payload.model_dump(mode="json"))
     return item.model_copy(
@@ -461,7 +470,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="onebrain-local-import",
         description=(
-            "Import local files through the OneBrain API after Codex CLI contextualization."
+            "Import learned knowledge from local docs through the OneBrain API after "
+            "Codex CLI contextualization."
         ),
     )
     parser.add_argument(
@@ -471,7 +481,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--docs",
-        help="Local docs file or folder path to read, contextualize with Codex CLI, and import.",
+        help="Local docs file or folder path to learn from, categorize, and import as knowledge.",
     )
     parser.add_argument("--api-url", default=os.getenv("ONEBRAIN_API_URL", DEFAULT_API_URL))
     parser.add_argument(
@@ -596,23 +606,26 @@ def _context_prompt(
         for item in child_items[:16]
     ]
     return (
-        "You are preparing a OneBrain memory import. Analyze the local source file and return "
-        "a concise semantic context profile for the file. Focus on what the file means, what "
-        "workflow/domain it supports, and which concepts should become graph/search entities. "
-        "Do not copy secrets, tokens, or long source text. Return only JSON that matches the "
-        "provided schema.\n\n"
-        f"Relative path: {document.relative_path}\n"
-        f"Source ref: {document.source_ref}\n"
-        f"Initial title: {macro_item.title}\n"
-        f"Initial summary: {macro_item.summary}\n"
+        "You are preparing a OneBrain knowledge import. You are not importing a file body; "
+        "you are learning durable operational knowledge from source evidence. Treat the path "
+        "and source ref strictly as provenance, not as the memory topic. Synthesize what the "
+        "material teaches, categorize it, and name the real workflow, rule, concept, tool, "
+        "pattern, pitfall, or decision it represents. Bring relevant technical knowledge only "
+        "when it is directly supported by the evidence. Do not invent unrelated claims. Do not "
+        "copy secrets, tokens, or long source text. Return only JSON that matches the provided "
+        "schema.\n\n"
+        f"Provenance relative path: {document.relative_path}\n"
+        f"Provenance source ref: {document.source_ref}\n"
+        f"Initial extracted title: {macro_item.title}\n"
+        f"Initial extracted summary: {macro_item.summary}\n"
         f"Detected sections JSON: {json.dumps(sections, ensure_ascii=False)}\n\n"
-        "<file>\n"
+        "<source_evidence>\n"
         f"{file_text}\n"
-        "</file>\n"
+        "</source_evidence>\n"
     )
 
 
-def _file_context_schema() -> dict[str, Any]:
+def _knowledge_context_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
@@ -621,6 +634,7 @@ def _file_context_schema() -> dict[str, Any]:
             "summary",
             "purpose",
             "domain",
+            "category",
             "key_topics",
             "important_sections",
             "entities",
@@ -632,6 +646,7 @@ def _file_context_schema() -> dict[str, Any]:
             "summary": {"type": "string", "minLength": 1, "maxLength": 700},
             "purpose": {"type": "string", "minLength": 1, "maxLength": 900},
             "domain": {"type": "string", "maxLength": 120},
+            "category": {"type": "string", "maxLength": 120},
             "key_topics": {
                 "type": "array",
                 "maxItems": 12,
@@ -666,10 +681,10 @@ def _file_context_schema() -> dict[str, Any]:
     }
 
 
-def _parse_file_context(output: str) -> FileContext:
+def _parse_knowledge_context(output: str) -> KnowledgeContext:
     parsed = _parse_json_object(output)
     try:
-        return FileContext.model_validate(parsed)
+        return KnowledgeContext.model_validate(parsed)
     except ValidationError as exc:
         raise RuntimeError(f"codex context did not match schema: {exc}") from exc
 
@@ -692,7 +707,7 @@ def _parse_json_object(output: str) -> dict[str, Any]:
     return payload
 
 
-def _macro_content(existing: str, context: FileContext, contextualizer_name: str) -> str:
+def _macro_content(existing: str, context: KnowledgeContext, contextualizer_name: str) -> str:
     topics = ", ".join(context.key_topics) if context.key_topics else "none"
     sections = ", ".join(context.important_sections) if context.important_sections else "none"
     lines = [
@@ -701,13 +716,14 @@ def _macro_content(existing: str, context: FileContext, contextualizer_name: str
         f"Summary: {context.summary}",
         f"Purpose: {context.purpose}",
         f"Domain: {context.domain or 'unspecified'}",
+        f"Category: {context.category or 'uncategorized'}",
         f"Key topics: {topics}",
-        f"Important sections: {sections}",
+        f"Supporting evidence: {sections}",
         "",
-        f"{_contextualization_label(contextualizer_name)} contextualization:",
+        f"{_contextualization_label(contextualizer_name)} learned knowledge:",
         _entity_lines(context),
         "",
-        "Original ingestion context:",
+        "Source evidence summary:",
         existing.strip(),
     ]
     return "\n".join(line for line in lines if line is not None).strip()
@@ -721,15 +737,16 @@ def _contextualization_label(contextualizer_name: str) -> str:
     return contextualizer_name.replace("-", " ").title()
 
 
-def _child_content(existing: str, context: FileContext) -> str:
+def _child_content(existing: str, context: KnowledgeContext) -> str:
     return (
-        f"Parent file context: {context.summary}\n"
-        f"Parent purpose: {context.purpose}\n\n"
+        f"Parent knowledge context: {context.summary}\n"
+        f"Knowledge purpose: {context.purpose}\n"
+        f"Knowledge category: {context.category or 'uncategorized'}\n\n"
         f"{existing.strip()}"
     ).strip()
 
 
-def _entity_lines(context: FileContext) -> str:
+def _entity_lines(context: KnowledgeContext) -> str:
     if not context.entities:
         return "- No explicit entities identified."
     return "\n".join(
@@ -740,7 +757,7 @@ def _entity_lines(context: FileContext) -> str:
 
 def _merge_entities(
     existing: list[EntityInput],
-    context: FileContext,
+    context: KnowledgeContext,
     contextualizer_name: str,
 ) -> list[EntityInput]:
     entities = list(existing)
@@ -766,10 +783,12 @@ def _merge_tags(left: list[str], right: list[str]) -> list[str]:
     return sorted({tag for tag in [*left, *right] if tag})
 
 
-def _context_tags(context: FileContext, contextualizer_name: str) -> list[str]:
+def _context_tags(context: KnowledgeContext, contextualizer_name: str) -> list[str]:
     tags = ["llm:codex"] if contextualizer_name == "codex-cli" else []
     if context.domain:
         tags.append(f"domain:{_tag_slug(context.domain)}")
+    if context.category:
+        tags.append(f"category:{_tag_slug(context.category)}")
     tags.extend(f"topic:{_tag_slug(topic)}" for topic in context.key_topics[:5])
     tags.extend(_tag_slug(tag) for tag in context.tags)
     return [tag for tag in tags if tag]
@@ -798,6 +817,32 @@ def _local_file_path(root_path: Path, relative_path: str) -> Path:
 
 def _codex_cwd(root_path: Path) -> Path:
     return root_path if root_path.is_dir() else root_path.parent
+
+
+def _heuristic_domain(topics: list[str]) -> str:
+    topic_text = " ".join(topics).casefold()
+    if "robot" in topic_text or "browser" in topic_text:
+        return "Robot Framework Browser E2E testing"
+    if "api" in topic_text or "http" in topic_text:
+        return "API engineering"
+    if "django" in topic_text:
+        return "Django application engineering"
+    if "mcp" in topic_text:
+        return "MCP integration"
+    return "knowledge management"
+
+
+def _heuristic_category(document: IngestionDocument, topics: list[str]) -> str:
+    text = f"{document.title} {document.summary} {' '.join(topics)}".casefold()
+    if any(term in text for term in ["pitfall", "error", "fail", "timeout", "dryrun"]):
+        return "engineering pitfall"
+    if any(term in text for term in ["rule", "separator", "contract", "schema"]):
+        return "implementation rule"
+    if any(term in text for term in ["workflow", "process", "orchestration"]):
+        return "workflow guidance"
+    if any(term in text for term in ["pattern", "architecture", "design"]):
+        return "engineering pattern"
+    return "technical knowledge"
 
 
 def _read_text(path: Path) -> str:
