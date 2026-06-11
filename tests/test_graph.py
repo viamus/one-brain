@@ -9,7 +9,9 @@ import pytest
 from onebrain_core.application.service import OneBrainService
 from onebrain_core.contracts.schemas import (
     ContextRequest,
+    GraphAggregationRequest,
     GraphEdge,
+    GraphGroupingOpportunity,
     GraphNode,
     GraphRequest,
     GraphResponse,
@@ -455,6 +457,149 @@ def test_graph_grouping_opportunities_deduplicate_overlapping_seeds() -> None:
     assert len(opportunities) == 1
 
 
+@pytest.mark.asyncio
+async def test_graph_aggregation_materializes_grouping_opportunity_memory() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    member_ids = [uuid.uuid4() for _ in range(3)]
+    aggregate_id = uuid.uuid4()
+    opportunity = GraphGroupingOpportunity(
+        id="cluster-1",
+        label="LGPD Privacy Cluster",
+        summary="3 memories form a candidate cluster around LGPD privacy.",
+        member_node_ids=[f"memory:{memory_id}" for memory_id in member_ids],
+        member_count=3,
+        centroid_node_id=f"memory:{member_ids[0]}",
+        score=12.5,
+        cohesion=0.8,
+        separation=0.7,
+        reasons=["semantic_overlap", "vector_neighbor"],
+        keywords=["LGPD", "Privacy"],
+    )
+    members = [
+        memory_for_test(
+            id=memory_id,
+            memory_type="context",
+            title=f"LGPD source {index}",
+            content=f"LGPD source content {index}",
+            content_hash=f"member-{index}",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.8,
+            source_type="manual",
+        )
+        for index, memory_id in enumerate(member_ids)
+    ]
+    captured_payloads = []
+    links = []
+
+    async def fake_build_graph(request: GraphRequest):
+        return SimpleNamespace(
+            memory_count=len(members),
+            grouping_opportunities=[opportunity],
+        )
+
+    async def fake_load_memories(memory_ids):
+        return [memory for memory in members if memory.id in set(memory_ids)]
+
+    async def no_existing(source_ref):
+        return None
+
+    async def fake_capture_memory(payload, actor="system"):
+        captured_payloads.append(payload)
+        return SimpleNamespace(id=aggregate_id)
+
+    async def fake_link_memories(**kwargs):
+        links.append(kwargs)
+        return {"id": str(uuid.uuid4())}
+
+    service.build_graph = fake_build_graph
+    service._load_memories = fake_load_memories
+    service._active_memory_by_source_ref = no_existing
+    service.capture_memory = fake_capture_memory
+    service.link_memories = fake_link_memories
+
+    result = await service.materialize_grouping_opportunities(
+        GraphAggregationRequest(
+            graph=GraphRequest(filters={"scope": {"project": "one-brain"}}),
+            min_member_count=3,
+        )
+    )
+
+    assert result.created == 1
+    assert result.items[0].memory_id == aggregate_id
+    assert result.items[0].links_created == 3
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert payload.memory_type == "context"
+    assert payload.title == "LGPD Privacy Cluster"
+    assert "graph:aggregate" in payload.tags
+    assert payload.source.source_type == "graph-aggregation"
+    assert payload.metadata["member_memory_ids"] == [str(memory.id) for memory in members]
+    assert len(links) == 3
+    assert {link["to_memory_id"] for link in links} == set(member_ids)
+    assert all(link["link_type"] == "aggregates" for link in links)
+
+
+@pytest.mark.asyncio
+async def test_graph_aggregation_skips_existing_aggregate_memory() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    member_ids = [uuid.uuid4() for _ in range(3)]
+    existing_id = uuid.uuid4()
+    opportunity = GraphGroupingOpportunity(
+        id="cluster-1",
+        label="Existing Cluster",
+        summary="Existing cluster.",
+        member_node_ids=[f"memory:{memory_id}" for memory_id in member_ids],
+        member_count=3,
+        score=10,
+        cohesion=0.75,
+    )
+    members = [
+        memory_for_test(
+            id=memory_id,
+            memory_type="context",
+            title=f"Source {index}",
+            content=f"Source content {index}",
+            content_hash=f"member-{index}",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.8,
+            source_type="manual",
+        )
+        for index, memory_id in enumerate(member_ids)
+    ]
+    captured = False
+
+    async def fake_build_graph(request: GraphRequest):
+        return SimpleNamespace(memory_count=len(members), grouping_opportunities=[opportunity])
+
+    async def fake_load_memories(memory_ids):
+        return [memory for memory in members if memory.id in set(memory_ids)]
+
+    async def existing_memory(source_ref):
+        return SimpleNamespace(id=existing_id)
+
+    async def should_not_capture(payload, actor="system"):
+        nonlocal captured
+        captured = True
+        return SimpleNamespace(id=uuid.uuid4())
+
+    service.build_graph = fake_build_graph
+    service._load_memories = fake_load_memories
+    service._active_memory_by_source_ref = existing_memory
+    service.capture_memory = should_not_capture
+
+    result = await service.materialize_grouping_opportunities(
+        GraphAggregationRequest(graph=GraphRequest(), min_member_count=3)
+    )
+
+    assert result.created == 0
+    assert result.existing == 1
+    assert result.items[0].status == "existing"
+    assert result.items[0].memory_id == existing_id
+    assert captured is False
+
+
 def test_memory_graph_label_derives_source_context_for_generic_document_body() -> None:
     service = OneBrainService.__new__(OneBrainService)
     memory = Memory(
@@ -632,6 +777,43 @@ async def test_safe_vector_search_returns_empty_when_embedding_fails() -> None:
     service._vector_store = UnusedVectorStore()
 
     assert await service._safe_vector_search(SearchRequest(query="onebrain")) == []
+
+
+@pytest.mark.asyncio
+async def test_safe_vector_search_passes_scope_and_tag_filters() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    captured = {}
+
+    class FakeEmbeddings:
+        async def embed(self, texts):
+            return [[1.0, 0.0]]
+
+    class FakeVectorStore:
+        async def search(self, *, vector, limit, filters):
+            captured["filters"] = filters
+            return []
+
+    service._embeddings = FakeEmbeddings()
+    service._vector_store = FakeVectorStore()
+
+    await service._safe_vector_search(
+        SearchRequest(
+            query="cluster",
+            filters={
+                "memory_types": ["context"],
+                "tags": ["graph:aggregate"],
+                "scope": {"catalog": "private-engineering-catalog"},
+                "statuses": ["active"],
+            },
+        )
+    )
+
+    assert captured["filters"] == {
+        "status": ["active"],
+        "memory_type": ["context"],
+        "tags": ["graph:aggregate"],
+        "scope.catalog": "private-engineering-catalog",
+    }
 
 
 @pytest.mark.asyncio

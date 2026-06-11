@@ -271,6 +271,38 @@ class GraphResponse(BaseModel):
     grouping_opportunities: list[GraphGroupingOpportunity] = Field(default_factory=list)
 
 
+class GraphAggregationRequest(BaseModel):
+    graph: GraphRequest = Field(default_factory=GraphRequest)
+    min_score: float = Field(default=0.0, ge=0.0)
+    min_member_count: int = Field(default=3, ge=2, le=100)
+    dry_run: bool = False
+    source_type: str = Field(default="graph-aggregation", min_length=1, max_length=64)
+    link_type: str = Field(default="aggregates", min_length=1, max_length=64)
+    scope: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphAggregationItem(BaseModel):
+    opportunity_id: str
+    label: str
+    status: Literal["created", "dry_run", "existing", "skipped"]
+    reason: str | None = None
+    memory_id: uuid.UUID | None = None
+    source_ref: str | None = None
+    member_count: int = 0
+    score: float = 0.0
+    links_created: int = 0
+
+
+class GraphAggregationResponse(BaseModel):
+    dry_run: bool = False
+    graph_memory_count: int = 0
+    scanned: int = 0
+    created: int = 0
+    existing: int = 0
+    skipped: int = 0
+    items: list[GraphAggregationItem] = Field(default_factory=list)
+
+
 class IngestionAnalyzeRequest(BaseModel):
     path: str = Field(min_length=1)
     scope: dict[str, Any] = Field(default_factory=dict)

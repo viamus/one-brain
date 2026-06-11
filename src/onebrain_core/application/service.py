@@ -31,6 +31,9 @@ from onebrain_core.contracts.schemas import (
     CorrelationRequest,
     CorrelationResponse,
     EntityInput,
+    GraphAggregationItem,
+    GraphAggregationRequest,
+    GraphAggregationResponse,
     GraphEdge,
     GraphGroupingOpportunity,
     GraphNode,
@@ -42,6 +45,7 @@ from onebrain_core.contracts.schemas import (
     SearchHit,
     SearchRequest,
     SearchResponse,
+    SourceRef,
 )
 from onebrain_core.infrastructure.embeddings import EmbeddingProvider
 from onebrain_core.infrastructure.models import (
@@ -630,6 +634,132 @@ class OneBrainService:
             grouping_opportunities=grouping_opportunities,
         )
 
+    async def materialize_grouping_opportunities(
+        self,
+        request: GraphAggregationRequest,
+        *,
+        actor: str = "graph-aggregation-job",
+    ) -> GraphAggregationResponse:
+        graph_request = request.graph.model_copy(
+            update={
+                "include_correlations": True,
+                "include_grouping_opportunities": True,
+                "grouping_min_size": max(
+                    request.graph.grouping_min_size,
+                    request.min_member_count,
+                ),
+            }
+        )
+        graph = await self.build_graph(graph_request)
+
+        items: list[GraphAggregationItem] = []
+        created = 0
+        existing = 0
+        skipped = 0
+        for opportunity in graph.grouping_opportunities:
+            if opportunity.score < request.min_score:
+                skipped += 1
+                items.append(
+                    self._grouping_aggregation_item(
+                        opportunity,
+                        status="skipped",
+                        reason="below_min_score",
+                    )
+                )
+                continue
+
+            member_ids = self._grouping_member_ids(opportunity)
+            member_memories = [
+                memory
+                for memory in await self._load_memories(member_ids)
+                if not self._is_graph_aggregate_memory(memory)
+            ]
+            member_memories.sort(key=lambda memory: (memory.title or "", str(memory.id)))
+            if len(member_memories) < request.min_member_count:
+                skipped += 1
+                items.append(
+                    self._grouping_aggregation_item(
+                        opportunity,
+                        status="skipped",
+                        reason="not_enough_source_members",
+                        member_count=len(member_memories),
+                    )
+                )
+                continue
+
+            source_ref = self._grouping_aggregate_source_ref(member_memories)
+            existing_memory = await self._active_memory_by_source_ref(source_ref)
+            if existing_memory is not None:
+                existing += 1
+                items.append(
+                    self._grouping_aggregation_item(
+                        opportunity,
+                        status="existing",
+                        reason="already_materialized",
+                        memory_id=existing_memory.id,
+                        source_ref=source_ref,
+                        member_count=len(member_memories),
+                    )
+                )
+                continue
+
+            if request.dry_run:
+                items.append(
+                    self._grouping_aggregation_item(
+                        opportunity,
+                        status="dry_run",
+                        source_ref=source_ref,
+                        member_count=len(member_memories),
+                    )
+                )
+                continue
+
+            payload = self._grouping_aggregate_memory_create(
+                opportunity,
+                member_memories,
+                request,
+                source_ref=source_ref,
+            )
+            aggregate_memory = await self.capture_memory(payload, actor=actor)
+            links_created = 0
+            for index, member in enumerate(member_memories):
+                await self.link_memories(
+                    from_memory_id=aggregate_memory.id,
+                    to_memory_id=member.id,
+                    link_type=request.link_type,
+                    confidence=max(0.5, opportunity.cohesion),
+                    order_index=index,
+                    evidence=opportunity.summary,
+                    metadata={
+                        "aggregation_kind": "graph_grouping_opportunity",
+                        "opportunity_id": opportunity.id,
+                        "opportunity_score": opportunity.score,
+                    },
+                    actor=actor,
+                )
+                links_created += 1
+            created += 1
+            items.append(
+                self._grouping_aggregation_item(
+                    opportunity,
+                    status="created",
+                    memory_id=aggregate_memory.id,
+                    source_ref=source_ref,
+                    member_count=len(member_memories),
+                    links_created=links_created,
+                )
+            )
+
+        return GraphAggregationResponse(
+            dry_run=request.dry_run,
+            graph_memory_count=graph.memory_count,
+            scanned=len(graph.grouping_opportunities),
+            created=created,
+            existing=existing,
+            skipped=skipped,
+            items=items,
+        )
+
     async def health(self) -> dict[str, bool]:
         database_ok = False
         qdrant_ok = False
@@ -643,6 +773,11 @@ class OneBrainService:
         filters: dict[str, Any] = {"status": request.filters.statuses}
         if request.filters.memory_types:
             filters["memory_type"] = request.filters.memory_types
+        if request.filters.tags:
+            filters["tags"] = request.filters.tags
+        if request.filters.scope:
+            for key, value in request.filters.scope.items():
+                filters[f"scope.{key}"] = value
         try:
             vector = (await self._embeddings.embed([request.query]))[0]
             return await self._vector_store.search(
@@ -1679,6 +1814,152 @@ class OneBrainService:
                 node_group_ids = nodes[member_node_id].metadata.setdefault("group_ids", [])
                 if isinstance(node_group_ids, list) and opportunity.id not in node_group_ids:
                     node_group_ids.append(opportunity.id)
+
+    async def _active_memory_by_source_ref(self, source_ref: str) -> MemoryOut | None:
+        try:
+            return await self.get_memory_by_source_ref(source_ref)
+        except KeyError:
+            return None
+
+    def _grouping_member_ids(self, opportunity: GraphGroupingOpportunity) -> list[uuid.UUID]:
+        memory_ids: list[uuid.UUID] = []
+        for node_id in opportunity.member_node_ids:
+            if not node_id.startswith("memory:"):
+                continue
+            try:
+                memory_ids.append(uuid.UUID(node_id.removeprefix("memory:")))
+            except ValueError:
+                continue
+        return sorted(set(memory_ids), key=str)
+
+    def _is_graph_aggregate_memory(self, memory: Memory) -> bool:
+        metadata = memory.metadata_ or {}
+        return (
+            "graph:aggregate" in memory.tags
+            or metadata.get("aggregation_kind") == "graph_grouping_opportunity"
+        )
+
+    def _grouping_aggregate_source_ref(self, member_memories: list[Memory]) -> str:
+        digest = sha256(
+            "|".join(sorted(str(memory.id) for memory in member_memories)).encode()
+        ).hexdigest()
+        return f"onebrain://graph/grouping/{digest[:16]}"
+
+    def _grouping_aggregate_memory_create(
+        self,
+        opportunity: GraphGroupingOpportunity,
+        member_memories: list[Memory],
+        request: GraphAggregationRequest,
+        *,
+        source_ref: str,
+    ) -> MemoryCreate:
+        scope = (
+            request.scope
+            or request.graph.filters.scope
+            or self._common_memory_scope(member_memories)
+        )
+        member_ids = [str(memory.id) for memory in member_memories]
+        member_titles = [self._memory_label(memory) for memory in member_memories]
+        return MemoryCreate(
+            memory_type="context",
+            title=opportunity.label,
+            content=self._grouping_aggregate_content(opportunity, member_memories),
+            scope=scope,
+            tags=[
+                "auto:generated",
+                "graph:aggregate",
+                "grouping:opportunity",
+                "knowledge:aggregate",
+            ],
+            confidence=min(0.95, max(0.62, 0.55 + opportunity.cohesion * 0.25)),
+            source=SourceRef(source_type=request.source_type, source_ref=source_ref),
+            entities=[
+                EntityInput(
+                    name=opportunity.label,
+                    entity_type="knowledge_cluster",
+                    role="subject",
+                ),
+                *[
+                    EntityInput(name=keyword, entity_type="concept", role="cluster_keyword")
+                    for keyword in opportunity.keywords[:8]
+                ],
+            ],
+            metadata={
+                "aggregation_kind": "graph_grouping_opportunity",
+                "aggregation_version": "v1",
+                "opportunity": opportunity.model_dump(mode="json"),
+                "member_memory_ids": member_ids,
+                "member_titles": member_titles,
+                "source_member_count": len(member_memories),
+            },
+        )
+
+    def _common_memory_scope(self, memories: list[Memory]) -> dict[str, Any]:
+        if not memories:
+            return {}
+        keys = set(memories[0].scope)
+        for memory in memories[1:]:
+            keys &= set(memory.scope)
+        scope: dict[str, Any] = {}
+        for key in sorted(keys):
+            value = memories[0].scope.get(key)
+            if all(memory.scope.get(key) == value for memory in memories):
+                scope[key] = value
+        return scope
+
+    def _grouping_aggregate_content(
+        self,
+        opportunity: GraphGroupingOpportunity,
+        member_memories: list[Memory],
+    ) -> str:
+        keywords = ", ".join(opportunity.keywords[:8]) or "not available"
+        reasons = ", ".join(opportunity.reasons[:8]) or "not available"
+        member_lines = [
+            f"- {self._memory_label(memory)}: {self._preview(memory.content, 180)}"
+            for memory in member_memories[:12]
+        ]
+        return "\n".join(
+            [
+                f"Graph aggregate memory: {opportunity.label}",
+                "",
+                "Summary",
+                opportunity.summary,
+                "",
+                "Cluster signals",
+                f"- Members: {len(member_memories)}",
+                f"- Score: {opportunity.score:.2f}",
+                f"- Cohesion: {opportunity.cohesion:.2f}",
+                f"- Separation: {opportunity.separation:.2f}",
+                f"- Keywords: {keywords}",
+                f"- Reasons: {reasons}",
+                "",
+                "Source memories",
+                *member_lines,
+            ]
+        )
+
+    def _grouping_aggregation_item(
+        self,
+        opportunity: GraphGroupingOpportunity,
+        *,
+        status: str,
+        reason: str | None = None,
+        memory_id: uuid.UUID | None = None,
+        source_ref: str | None = None,
+        member_count: int | None = None,
+        links_created: int = 0,
+    ) -> GraphAggregationItem:
+        return GraphAggregationItem(
+            opportunity_id=opportunity.id,
+            label=opportunity.label,
+            status=status,
+            reason=reason,
+            memory_id=memory_id,
+            source_ref=source_ref,
+            member_count=member_count if member_count is not None else opportunity.member_count,
+            score=opportunity.score,
+            links_created=links_created,
+        )
 
     def _grouping_keywords(
         self,
