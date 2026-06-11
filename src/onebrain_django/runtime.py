@@ -6,10 +6,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from onebrain.config import Settings, get_settings
-from onebrain.db import create_engine
-from onebrain.runtime import build_service
-from onebrain.service import OneBrainService
+from onebrain_core.config import Settings, get_settings
+from onebrain_core.db import create_engine
+from onebrain_core.runtime import build_service
+from onebrain_core.service import OneBrainService
 
 _settings_override: Settings | None = None
 _service_override: Any | None = None

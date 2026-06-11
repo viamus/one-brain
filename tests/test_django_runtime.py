@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from onebrain.config import Settings
+from onebrain_core.config import Settings
 from onebrain_django import runtime
 
 

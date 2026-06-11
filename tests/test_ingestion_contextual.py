@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from onebrain.ingestion import analyze_memory_files, commit_ingestion_plan
-from onebrain.schemas import IngestionAnalyzeRequest, IngestionCommitRequest
+from onebrain_core.ingestion import analyze_memory_files, commit_ingestion_plan
+from onebrain_core.schemas import IngestionAnalyzeRequest, IngestionCommitRequest
 
 
 class FakeIngestionService:

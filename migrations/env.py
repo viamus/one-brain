@@ -5,8 +5,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from onebrain.config import get_settings
-from onebrain.models import Base
+from onebrain_core.config import get_settings
+from onebrain_core.models import Base
 
 config = context.config
 

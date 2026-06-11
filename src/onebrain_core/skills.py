@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol
 
-from onebrain.memory_hardening import HardeningResult, redact_secret_text
-from onebrain.schemas import EntityInput, MemoryCreate, SkillCreate
-from onebrain.text import normalize_name
+from onebrain_core.memory_hardening import HardeningResult, redact_secret_text
+from onebrain_core.schemas import EntityInput, MemoryCreate, SkillCreate
+from onebrain_core.text import normalize_name
 
 
 class SkillApiClient(Protocol):

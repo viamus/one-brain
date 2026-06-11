@@ -6,8 +6,8 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from pydantic import ValidationError
 
-from onebrain.ingestion import analyze_memory_files, commit_ingestion_plan
-from onebrain.schemas import (
+from onebrain_core.ingestion import analyze_memory_files, commit_ingestion_plan
+from onebrain_core.schemas import (
     ContextRequest,
     CorrelationRequest,
     GraphRequest,
@@ -18,7 +18,7 @@ from onebrain.schemas import (
     SearchRequest,
     SkillCreate,
 )
-from onebrain.skills import harden_skill_payload
+from onebrain_core.skills import harden_skill_payload
 from onebrain_django.http import (
     error_response,
     json_response,

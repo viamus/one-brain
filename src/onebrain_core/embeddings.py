@@ -9,7 +9,7 @@ from typing import Protocol
 
 import structlog
 
-from onebrain.config import Settings
+from onebrain_core.config import Settings
 
 TOKEN_RE = re.compile(r"[\w-]+", re.UNICODE)
 LOGGER = structlog.get_logger(__name__)

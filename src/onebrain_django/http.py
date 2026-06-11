@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 from django.http import HttpRequest, JsonResponse
 from pydantic import BaseModel, ValidationError
 
-from onebrain.config import Settings
+from onebrain_core.config import Settings
 
 T = TypeVar("T")
 

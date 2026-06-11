@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from onebrain.ingestion import analyze, commit
+from onebrain_core.ingestion import analyze, commit
 
 
 class FakeCaptureClient:

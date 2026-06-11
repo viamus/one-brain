@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from onebrain.schemas import MemoryCreate
-from onebrain.text import content_hash
+from onebrain_core.schemas import MemoryCreate
+from onebrain_core.text import content_hash
 
 ALLOWED_EXTENSIONS = {"", ".json", ".md", ".markdown", ".txt", ".text", ".yaml", ".yml"}
 DEFAULT_EXCLUDE_DIRS = {

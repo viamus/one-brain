@@ -11,14 +11,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from onebrain.config import get_settings
-from onebrain.db import create_engine
-from onebrain.logging import configure_logging
-from onebrain.memory_hardening import harden_memory_payload
-from onebrain.memory_importer import add_hardened_memory, import_memory_files
-from onebrain.path_mapping import resolve_mapped_path
-from onebrain.runtime import build_service
-from onebrain.schemas import (
+from onebrain_core.config import get_settings
+from onebrain_core.db import create_engine
+from onebrain_core.logging import configure_logging
+from onebrain_core.memory_hardening import harden_memory_payload
+from onebrain_core.memory_importer import add_hardened_memory, import_memory_files
+from onebrain_core.path_mapping import resolve_mapped_path
+from onebrain_core.runtime import build_service
+from onebrain_core.schemas import (
     ContextRequest,
     CorrelationRequest,
     GraphRequest,
@@ -26,8 +26,8 @@ from onebrain.schemas import (
     SearchFilters,
     SearchRequest,
 )
-from onebrain.service import OneBrainService
-from onebrain.skills import add_hardened_skill, harden_skill_payload
+from onebrain_core.service import OneBrainService
+from onebrain_core.skills import add_hardened_skill, harden_skill_payload
 
 HEALTH_PATH = "/healthz"
 READY_PATH = "/readyz"

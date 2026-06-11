@@ -47,7 +47,7 @@ Core responsibilities:
 
 ```text
 .
-+-- src/onebrain/              # Core application package
++-- src/onebrain_core/         # Core application package
 +-- src/onebrain_django/       # Django Web and Django API facade
 +-- manage.py                  # Django management entry point
 +-- migrations/                # Alembic migrations
