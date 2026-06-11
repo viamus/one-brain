@@ -250,7 +250,8 @@ container paths. By default it knows `C:\DoxieOS=/mnt/doxie`; override with `--p
 
 ```powershell
 $env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"organization":"abinbev","catalog":"private-engineering-catalog"}'
-uv run onebrain-local-import C:\DoxieOS\github-private-catalog\libraries\ambevtech-developer-memory `
+uv run onebrain-local-import `
+  --docs C:\DoxieOS\github-private-catalog\libraries\ambevtech-developer-memory `
   --api-url http://127.0.0.1:8088/api/v1 `
   --api-key $env:ONEBRAIN_MCP_CLIENT_KEY `
   --source-type private-catalog-library `
@@ -265,6 +266,9 @@ Useful switches:
 - `--codex-model`: choose a Codex model for local contextualization.
 - `--scope-json-file`: load scope from a UTF-8 JSON file when shell quoting is inconvenient.
 - `--skip-codex`: use deterministic fallback context when debugging API import mechanics.
+
+By default the importer reads every eligible file under `--docs`. Use `--max-files` only for smoke
+tests or partial imports.
 
 Analyze a catalog library from Docker:
 

@@ -13,6 +13,7 @@ from onebrain_cli.local_importer import (
     LocalImportOptions,
     _load_scope,
     _parse_file_context,
+    _resolve_docs_path,
     run_local_import,
 )
 from onebrain_core.contracts.schemas import (
@@ -246,3 +247,21 @@ def test_load_scope_rejects_inline_and_file(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="either --scope-json or --scope-json-file"):
         _load_scope('{"organization":"abinbev"}', str(scope_file))
+
+
+def test_resolve_docs_path_prefers_explicit_docs_parameter() -> None:
+    assert _resolve_docs_path("docs", None) == Path("docs")
+
+
+def test_resolve_docs_path_accepts_legacy_positional_parameter() -> None:
+    assert _resolve_docs_path(None, "legacy-docs") == Path("legacy-docs")
+
+
+def test_resolve_docs_path_rejects_missing_path() -> None:
+    with pytest.raises(ValueError, match="--docs is required"):
+        _resolve_docs_path(None, None)
+
+
+def test_resolve_docs_path_rejects_docs_and_positional_path() -> None:
+    with pytest.raises(ValueError, match="either --docs or the positional docs path"):
+        _resolve_docs_path("docs", "legacy-docs")

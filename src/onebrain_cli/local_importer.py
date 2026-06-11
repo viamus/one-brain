@@ -464,7 +464,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Import local files through the OneBrain API after Codex CLI contextualization."
         ),
     )
-    parser.add_argument("path", help="Local file or folder path to import.")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="Deprecated positional docs path. Prefer --docs.",
+    )
+    parser.add_argument(
+        "--docs",
+        help="Local docs file or folder path to read, contextualize with Codex CLI, and import.",
+    )
     parser.add_argument("--api-url", default=os.getenv("ONEBRAIN_API_URL", DEFAULT_API_URL))
     parser.add_argument(
         "--api-key",
@@ -510,6 +518,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     try:
+        docs_path = _resolve_docs_path(args.docs, args.path)
         scope = _load_scope(args.scope_json, args.scope_json_file)
         contextualizer: Contextualizer
         if args.skip_codex:
@@ -525,7 +534,7 @@ async def async_main(argv: list[str] | None = None) -> int:
             )
         result = await run_local_import(
             LocalImportOptions(
-                path=Path(args.path),
+                path=docs_path,
                 api_path=args.api_path,
                 api_url=args.api_url,
                 api_key=args.api_key,
@@ -836,6 +845,15 @@ def _load_scope(scope_json: str, scope_json_file: str | None) -> dict[str, Any]:
             raise ValueError("use either --scope-json or --scope-json-file, not both")
         scope_json = Path(scope_json_file).read_text(encoding="utf-8")
     return _parse_scope(scope_json or "{}")
+
+
+def _resolve_docs_path(docs_path: str | None, positional_path: str | None) -> Path:
+    if docs_path and positional_path:
+        raise ValueError("use either --docs or the positional docs path, not both")
+    selected_path = docs_path or positional_path
+    if not selected_path:
+        raise ValueError("--docs is required")
+    return Path(selected_path)
 
 
 def _parse_scope(value: str) -> dict[str, Any]:
