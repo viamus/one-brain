@@ -390,17 +390,6 @@ GRAPH_UI_HTML = """<!doctype html>
       background: var(--edge);
     }
 
-    .line-sample {
-      width: 22px;
-      height: 0;
-      border-top: 2px solid var(--edge);
-    }
-
-    .line-sample.correlation {
-      border-top-color: var(--correlation);
-      border-top-style: dashed;
-    }
-
     .ring-sample {
       width: 13px;
       height: 13px;
@@ -530,10 +519,6 @@ GRAPH_UI_HTML = """<!doctype html>
             <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
             <span class="legend-item"><span class="dot" style="background: var(--context)"></span>Context</span>
             <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
-            <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
-            <span class="legend-item"><span class="dot" style="background: var(--fact)"></span>Fact</span>
-            <span class="legend-item"><span class="dot" style="background: var(--note)"></span>Note</span>
-            <span class="legend-item"><span class="line-sample correlation"></span>Correlation edge</span>
             <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
             <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
           </div>

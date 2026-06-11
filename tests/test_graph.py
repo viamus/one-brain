@@ -1035,6 +1035,16 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     assert 'class="legend legend-horizontal"' in html
     assert 'class="metrics top-metrics"' in html
     assert 'class="legend-title">Legend</span>' in html
+    assert ">Memory</span>" in html
+    assert ">Context</span>" in html
+    assert ">Skill</span>" in html
+    assert "Centroid candidate" in html
+    assert "Grouping opportunity" in html
+    assert "Correlation edge" not in html
+    assert "line-sample" not in html
+    assert ">Workflow</span>" not in html
+    assert ">Fact</span>" not in html
+    assert ">Note</span>" not in html
     assert 'id="spread"' in html
     assert "document.documentElement.dataset.theme" in html
     assert "centroid_candidate" in html
