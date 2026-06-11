@@ -212,6 +212,9 @@ class GraphRequest(BaseModel):
     max_correlation_degree: int = Field(default=6, ge=1, le=50)
     vector_neighbors_per_memory: int = Field(default=4, ge=1, le=20)
     vector_similarity_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
+    include_grouping_opportunities: bool = True
+    grouping_limit: int = Field(default=8, ge=0, le=50)
+    grouping_min_size: int = Field(default=3, ge=2, le=25)
 
     @field_validator("query")
     @classmethod
@@ -243,6 +246,21 @@ class GraphEdge(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GraphGroupingOpportunity(BaseModel):
+    id: str
+    label: str
+    summary: str
+    member_node_ids: list[str] = Field(default_factory=list)
+    member_count: int = 0
+    centroid_node_id: str | None = None
+    score: float = 0.0
+    cohesion: float = 0.0
+    separation: float = 0.0
+    reasons: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class GraphResponse(BaseModel):
     query: str | None
     nodes: list[GraphNode]
@@ -250,6 +268,39 @@ class GraphResponse(BaseModel):
     memory_count: int
     entity_count: int
     omitted: int = 0
+    grouping_opportunities: list[GraphGroupingOpportunity] = Field(default_factory=list)
+
+
+class GraphAggregationRequest(BaseModel):
+    graph: GraphRequest = Field(default_factory=GraphRequest)
+    min_score: float = Field(default=0.0, ge=0.0)
+    min_member_count: int = Field(default=3, ge=2, le=100)
+    dry_run: bool = False
+    source_type: str = Field(default="graph-aggregation", min_length=1, max_length=64)
+    link_type: str = Field(default="aggregates", min_length=1, max_length=64)
+    scope: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphAggregationItem(BaseModel):
+    opportunity_id: str
+    label: str
+    status: Literal["created", "dry_run", "existing", "skipped"]
+    reason: str | None = None
+    memory_id: uuid.UUID | None = None
+    source_ref: str | None = None
+    member_count: int = 0
+    score: float = 0.0
+    links_created: int = 0
+
+
+class GraphAggregationResponse(BaseModel):
+    dry_run: bool = False
+    graph_memory_count: int = 0
+    scanned: int = 0
+    created: int = 0
+    existing: int = 0
+    skipped: int = 0
+    items: list[GraphAggregationItem] = Field(default_factory=list)
 
 
 class IngestionAnalyzeRequest(BaseModel):
