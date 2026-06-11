@@ -3,8 +3,7 @@ from __future__ import annotations
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from onebrain_core.graph_ui import graph_view_html
-from onebrain_core.schemas import GraphRequest
+from onebrain_core.contracts.schemas import GraphRequest
 from onebrain_django.http import (
     error_response,
     json_response,
@@ -13,6 +12,7 @@ from onebrain_django.http import (
     validate_payload,
 )
 from onebrain_django.runtime import get_runtime_service
+from onebrain_django.web.graph_ui import graph_view_html
 
 
 async def healthz(_request: HttpRequest) -> JsonResponse:

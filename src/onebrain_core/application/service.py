@@ -13,10 +13,14 @@ from sqlalchemy import Select, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from onebrain_core.config import Settings
-from onebrain_core.embeddings import EmbeddingProvider
-from onebrain_core.models import AuditEvent, Entity, Memory, MemoryEntity, MemoryLink, Relation
-from onebrain_core.schemas import (
+from onebrain_core.common.config import Settings
+from onebrain_core.common.text import (
+    content_hash,
+    estimate_tokens,
+    extract_heuristic_entities,
+    normalize_name,
+)
+from onebrain_core.contracts.schemas import (
     ContextMemory,
     ContextPack,
     ContextRequest,
@@ -35,13 +39,16 @@ from onebrain_core.schemas import (
     SearchRequest,
     SearchResponse,
 )
-from onebrain_core.text import (
-    content_hash,
-    estimate_tokens,
-    extract_heuristic_entities,
-    normalize_name,
+from onebrain_core.infrastructure.embeddings import EmbeddingProvider
+from onebrain_core.infrastructure.models import (
+    AuditEvent,
+    Entity,
+    Memory,
+    MemoryEntity,
+    MemoryLink,
+    Relation,
 )
-from onebrain_core.vector_store import QdrantMemoryStore
+from onebrain_core.infrastructure.vector_store import QdrantMemoryStore
 
 LOGGER = structlog.get_logger(__name__)
 

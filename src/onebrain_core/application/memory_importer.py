@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from onebrain_core.memory_hardening import build_file_memory_candidates, harden_memory_payload
+from onebrain_core.application.memory_hardening import (
+    build_file_memory_candidates,
+    harden_memory_payload,
+)
 
 
 class MemoryApiClient(Protocol):

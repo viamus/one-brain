@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from onebrain_core.skills import add_hardened_skill, harden_skill_payload
+from onebrain_core.application.skills import add_hardened_skill, harden_skill_payload
 
 
 class FakeSkillClient:

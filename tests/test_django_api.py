@@ -5,8 +5,8 @@ import json
 import pytest
 from django.test import Client
 
-from onebrain_core.config import Settings
-from onebrain_core.schemas import GraphResponse, SearchResponse
+from onebrain_core.common.config import Settings
+from onebrain_core.contracts.schemas import GraphResponse, SearchResponse
 from onebrain_django.runtime import clear_runtime_overrides, set_runtime_overrides
 
 API_PREFIX = "/api/v1"

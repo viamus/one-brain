@@ -4,8 +4,11 @@ from typing import Any
 
 import pytest
 
-from onebrain_core.memory_hardening import build_file_memory_candidates, harden_memory_payload
-from onebrain_core.memory_importer import import_memory_files
+from onebrain_core.application.memory_hardening import (
+    build_file_memory_candidates,
+    harden_memory_payload,
+)
+from onebrain_core.application.memory_importer import import_memory_files
 
 
 class FakeMemoryClient:

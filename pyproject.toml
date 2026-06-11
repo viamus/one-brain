@@ -46,8 +46,7 @@ dev = [
 
 [project.scripts]
 onebrain-django = "onebrain_django.manage:run"
-onebrain-mcp = "onebrain_core.mcp_server:run"
-onebrain-mcp-http = "onebrain_core.mcp_server:run_http"
+onebrain-mcp = "onebrain_django.mcp.server:run_stdio"
 
 [build-system]
 requires = ["hatchling"]

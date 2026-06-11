@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Protocol
 
-from onebrain_core.memory_hardening import (
+from onebrain_core.application.memory_hardening import (
     ALLOWED_TEXT_EXTENSIONS,
     DEFAULT_EXCLUDE_DIRS,
     chunk_text,
@@ -13,7 +13,8 @@ from onebrain_core.memory_hardening import (
     harden_memory_payload,
     parse_frontmatter,
 )
-from onebrain_core.schemas import (
+from onebrain_core.common.text import content_hash, normalize_name
+from onebrain_core.contracts.schemas import (
     EntityInput,
     IngestionAnalyzeRequest,
     IngestionCommitRequest,
@@ -22,7 +23,6 @@ from onebrain_core.schemas import (
     IngestionItem,
     IngestionPlan,
 )
-from onebrain_core.text import content_hash, normalize_name
 
 
 class IngestionServiceClient(Protocol):

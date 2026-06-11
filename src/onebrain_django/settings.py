@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "onebrain_django.api",
+    "onebrain_django.mcp",
     "onebrain_django.web",
 ]
 

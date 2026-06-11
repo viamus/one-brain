@@ -1,6 +1,6 @@
 # OneBrain
 
-OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories in PostgreSQL, indexes semantic recall vectors in Qdrant, exposes Django Web and Django API surfaces for enterprise usage, and keeps an MCP HTTP interface for Codex and other agent clients.
+OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories in PostgreSQL, indexes semantic recall vectors in Qdrant, and exposes Django Web, Django API, and Django-hosted MCP HTTP surfaces for enterprise usage.
 
 OneBrain does not use an LLM in its online request path. The service remembers, retrieves, ranks, and explains. The calling LLM, such as Codex, is responsible for deeper reasoning over the context returned by OneBrain.
 
@@ -14,15 +14,15 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 - Builds deterministic context packs for LLM callers.
 - Exposes Django Web for human graph exploration.
 - Exposes Django API for memory, skill, graph, and contextual ingestion workflows.
-- Exposes an MCP HTTP server for Codex and other MCP clients.
+- Exposes a Django-hosted MCP HTTP endpoint for Codex and other MCP clients.
 - Supports API key authentication for deployed HTTP usage.
-- Runs with Docker Compose, including PostgreSQL, Qdrant, migrations, and the MCP HTTP service.
+- Runs with Docker Compose, including PostgreSQL, Qdrant, migrations, and one Django HTTP service.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Client["Codex / LLM / App"] --> MCP["OneBrain MCP HTTP"]
+    Client["Codex / LLM / App"] --> MCP["HomeBrain Django MCP<br/>/mcp"]
     Human["Human operator"] --> Web["HomeBrain Django Web"]
     Integrator["Agent / automation"] --> API["HomeBrain Django API"]
     Web --> Service["OneBrain Domain Service"]
@@ -39,7 +39,7 @@ Core responsibilities:
 - **Qdrant**: vector index for recall and similarity search.
 - **HomeBrain Django Web**: enterprise human surface for graph exploration and future operations screens.
 - **HomeBrain Django API**: enterprise HTTP API for memory capture, skills, graph contracts, context packs, and contextual ingestion.
-- **OneBrain MCP HTTP**: agent interface for capture, search, correlation, and context composition. It connects directly to the OneBrain domain service.
+- **HomeBrain Django MCP**: agent interface for capture, search, correlation, and context composition hosted by the same Django ASGI service.
 - **Graph view**: local visual map of semantic, explicit, and shared-entity correlations.
 - **Calling LLM**: reasoning, interpretation, conflict analysis, and task-specific decisions.
 
@@ -47,12 +47,12 @@ Core responsibilities:
 
 ```text
 .
-+-- src/onebrain_core/         # Core application package
-+-- src/onebrain_django/       # Django Web and Django API facade
++-- src/onebrain_core/         # Core packages: application, common, contracts, infrastructure, ingestion
++-- src/onebrain_django/       # Django deliveries: Web, API, MCP
 +-- manage.py                  # Django management entry point
 +-- migrations/                # Alembic migrations
 +-- tests/                     # Unit tests
-+-- docker-compose.yml         # PostgreSQL, Qdrant, migrations, Django, MCP
++-- docker-compose.yml         # PostgreSQL, Qdrant, migrations, Django
 +-- Dockerfile                 # Production container image
 +-- .env.example               # Local configuration template
 +-- CONTRIBUTING.md            # Contribution guide
@@ -85,8 +85,7 @@ This starts:
 - `postgres`
 - `qdrant`
 - `migrate`, which runs `alembic upgrade head`
-- `django-web`, the HomeBrain Django Web and Django API surface
-- `mcp-http`, the OneBrain streamable HTTP MCP service
+- `django-web`, the HomeBrain Django Web, API, and MCP HTTP surface
 
 Check status:
 
@@ -99,16 +98,7 @@ Open:
 - Django graph: `http://localhost:8088/graph`
 - Django health: `http://localhost:8088/healthz`
 - Django API: `http://localhost:8088/api/v1`
-- MCP health: `http://localhost:8090/healthz`
-- MCP readiness: `http://localhost:8090/readyz`
-
-If port `8090` is already in use, set a different host port in `.env`:
-
-```env
-ONEBRAIN_MCP_PORT=8091
-```
-
-Then use `http://localhost:8091/mcp`.
+- MCP HTTP: `http://localhost:8088/mcp`
 
 Stop the stack:
 
@@ -129,14 +119,13 @@ docker compose down -v
 | `postgres` | PostgreSQL canonical memory store |
 | `qdrant` | Vector database for semantic recall |
 | `migrate` | One-shot Alembic migration runner |
-| `django-web` | HomeBrain Django Web and Django API surface |
-| `mcp-http` | Streamable HTTP MCP service protected by API key |
+| `django-web` | HomeBrain Django Web, API, and MCP HTTP surface |
 
 The Compose file overrides container network URLs automatically:
 
 - Docker services use `postgres:5432`, not `localhost:5432`.
 - Docker services use `qdrant:6333`, not `localhost:6333`.
-- Web/API services mount `C:\DoxieOS` as `/mnt/doxie` for catalog ingestion.
+- The Django service mounts `C:\DoxieOS` as `/mnt/doxie` for catalog ingestion and MCP file imports.
 
 Your `.env` can still use `localhost` for host-based development.
 
@@ -151,7 +140,6 @@ ONEBRAIN_ENVIRONMENT=local
 ONEBRAIN_API_KEYS=
 ONEBRAIN_HTTP_PORT=8088
 ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
-ONEBRAIN_MCP_PORT=8090
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
 POSTGRES_DB=onebrain
@@ -183,7 +171,7 @@ ONEBRAIN_VECTOR_SIZE=384
 
 ## Authentication
 
-Django API and MCP HTTP authentication are controlled by `ONEBRAIN_API_KEYS`.
+Django API and Django-hosted MCP HTTP authentication are controlled by `ONEBRAIN_API_KEYS`.
 
 For local development:
 
@@ -384,7 +372,7 @@ OneBrain supports two MCP modes:
 - **HTTP MCP**, recommended for Codex once Docker is running.
 - **stdio MCP**, useful for local development.
 
-Both modes use the OneBrain core service directly. They do not call the Django API.
+Both modes use the OneBrain application service. HTTP MCP is hosted by the Django ASGI app and does not require a separate container.
 
 ### HTTP MCP
 
@@ -398,14 +386,13 @@ Make sure `.env` has:
 
 ```env
 ONEBRAIN_API_KEYS=dev-key-1
-ONEBRAIN_MCP_PORT=8090
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 ```
 
 The MCP HTTP endpoint is:
 
 ```text
-http://localhost:8090/mcp
+http://localhost:8088/mcp
 ```
 
 Recommended Codex config:
@@ -413,7 +400,7 @@ Recommended Codex config:
 ```toml
 [mcp_servers.onebrain]
 type = "http"
-url = "http://localhost:8090/mcp"
+url = "http://localhost:8088/mcp"
 bearer_token_env_var = "ONEBRAIN_MCP_CLIENT_KEY"
 ```
 
@@ -516,19 +503,18 @@ Bulk import local text files with hardening and exact `source_ref` dedupe:
 ```
 
 Use `dry_run=true` to inspect counts, classifications, and redactions without storing
-memories. The Docker Compose MCP HTTP service maps `C:\DoxieOS` to `/mnt/doxie` so tools can
+memories. The Docker Compose Django service maps `C:\DoxieOS` to `/mnt/doxie` so tools can
 read catalog libraries from inside the container.
 
 ## Local Development Without Docker Services
 
-You can run dependencies in Docker and the Django/MCP processes on the host:
+You can run dependencies in Docker and the Django/MCP process on the host:
 
 ```powershell
 docker compose up -d postgres qdrant
 uv sync --dev
 uv run alembic upgrade head
 uv run onebrain-django
-uv run onebrain-mcp-http
 ```
 
 Run tests:
@@ -602,7 +588,6 @@ Check service health:
 ```powershell
 docker compose ps
 docker compose logs -f django-web
-docker compose logs -f mcp-http
 docker compose logs -f migrate
 ```
 

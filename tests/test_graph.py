@@ -5,10 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from onebrain_core.graph_ui import graph_view_html
-from onebrain_core.models import Entity, Memory
-from onebrain_core.schemas import GraphEdge, GraphNode, GraphRequest, GraphResponse, SearchRequest
-from onebrain_core.service import OneBrainService
+from onebrain_core.application.service import OneBrainService
+from onebrain_core.contracts.schemas import (
+    GraphEdge,
+    GraphNode,
+    GraphRequest,
+    GraphResponse,
+    SearchRequest,
+)
+from onebrain_core.infrastructure.models import Entity, Memory
+from onebrain_django.web.graph_ui import graph_view_html
 
 
 def test_graph_request_normalizes_blank_query() -> None:
