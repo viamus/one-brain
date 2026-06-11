@@ -212,6 +212,9 @@ class GraphRequest(BaseModel):
     max_correlation_degree: int = Field(default=6, ge=1, le=50)
     vector_neighbors_per_memory: int = Field(default=4, ge=1, le=20)
     vector_similarity_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
+    include_grouping_opportunities: bool = True
+    grouping_limit: int = Field(default=8, ge=0, le=50)
+    grouping_min_size: int = Field(default=3, ge=2, le=25)
 
     @field_validator("query")
     @classmethod
@@ -243,6 +246,21 @@ class GraphEdge(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GraphGroupingOpportunity(BaseModel):
+    id: str
+    label: str
+    summary: str
+    member_node_ids: list[str] = Field(default_factory=list)
+    member_count: int = 0
+    centroid_node_id: str | None = None
+    score: float = 0.0
+    cohesion: float = 0.0
+    separation: float = 0.0
+    reasons: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class GraphResponse(BaseModel):
     query: str | None
     nodes: list[GraphNode]
@@ -250,6 +268,7 @@ class GraphResponse(BaseModel):
     memory_count: int
     entity_count: int
     omitted: int = 0
+    grouping_opportunities: list[GraphGroupingOpportunity] = Field(default_factory=list)
 
 
 class IngestionAnalyzeRequest(BaseModel):

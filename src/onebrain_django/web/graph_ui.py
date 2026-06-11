@@ -31,6 +31,7 @@ GRAPH_UI_HTML = """<!doctype html>
       --node-stroke: #ffffff;
       --centroid: #c78213;
       --grouping: #108e8c;
+      --grouping-soft: rgba(16, 142, 140, 0.12);
       --focus: #0b6bcb;
       --focus-soft: rgba(11, 107, 203, 0.22);
       --danger: #b54137;
@@ -60,6 +61,7 @@ GRAPH_UI_HTML = """<!doctype html>
       --node-stroke: #111923;
       --centroid: #f0bd45;
       --grouping: #28beb8;
+      --grouping-soft: rgba(40, 190, 184, 0.14);
       --focus: #5da7f0;
       --focus-soft: rgba(93, 167, 240, 0.24);
       --danger: #ee786f;
@@ -281,6 +283,73 @@ GRAPH_UI_HTML = """<!doctype html>
       backdrop-filter: blur(8px);
     }
 
+    .group-panel {
+      position: absolute;
+      z-index: 3;
+      left: 12px;
+      bottom: 12px;
+      display: grid;
+      gap: 8px;
+      width: min(360px, calc(100% - 24px));
+      max-height: min(340px, calc(100% - 120px));
+      overflow: hidden;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-float);
+      backdrop-filter: blur(8px);
+    }
+
+    .group-panel[hidden] {
+      display: none;
+    }
+
+    .group-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .group-list {
+      display: grid;
+      gap: 6px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .group-item {
+      width: 100%;
+      min-height: 0;
+      display: grid;
+      gap: 3px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--grouping-soft);
+      color: var(--ink);
+      text-align: left;
+    }
+
+    .group-item strong {
+      display: block;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .group-item span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+    }
+
     .legend-title {
       color: var(--ink);
       font-size: 12px;
@@ -389,6 +458,10 @@ GRAPH_UI_HTML = """<!doctype html>
       <span>Vector edges</span>
       <input id="includeVectorCorrelations" type="checkbox" checked>
     </label>
+    <label class="toggle-control" title="Show detected grouping opportunity nodes">
+      <span>Groups</span>
+      <input id="includeGroupingOpportunities" type="checkbox" checked>
+    </label>
     <label class="toggle-control" title="Use the dark graph theme">
       <span>Night mode</span>
       <input id="nightMode" type="checkbox">
@@ -405,8 +478,9 @@ GRAPH_UI_HTML = """<!doctype html>
       <canvas id="graph" aria-label="OneBrain correlation canvas"></canvas>
       <section class="metrics" aria-label="Graph metrics">
         <div class="metric"><strong id="nodeCount">0</strong><span>Nodes</span></div>
-        <div class="metric"><strong id="edgeCount">0</strong><span>Correlations</span></div>
+        <div class="metric"><strong id="edgeCount">0</strong><span>Edges</span></div>
         <div class="metric"><strong id="memoryCount">0</strong><span>Memories</span></div>
+        <div class="metric"><strong id="groupCount">0</strong><span>Groups</span></div>
       </section>
       <div class="legend" aria-label="Color legend">
         <span class="legend-title">Legend</span>
@@ -422,6 +496,13 @@ GRAPH_UI_HTML = """<!doctype html>
           <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
         </div>
       </div>
+      <section class="group-panel" id="groupPanel" aria-label="Grouping opportunities" hidden>
+        <div class="group-panel-head">
+          <span>Grouping Opportunities</span>
+          <span id="groupPanelCount">0</span>
+        </div>
+        <div class="group-list" id="groupList"></div>
+      </section>
     </section>
   </main>
 
@@ -432,6 +513,10 @@ GRAPH_UI_HTML = """<!doctype html>
     const nodeCountEl = document.getElementById("nodeCount");
     const edgeCountEl = document.getElementById("edgeCount");
     const memoryCountEl = document.getElementById("memoryCount");
+    const groupCountEl = document.getElementById("groupCount");
+    const groupPanelEl = document.getElementById("groupPanel");
+    const groupPanelCountEl = document.getElementById("groupPanelCount");
+    const groupListEl = document.getElementById("groupList");
     const queryEl = document.getElementById("query");
     const typeEl = document.getElementById("type");
     const limitEl = document.getElementById("limit");
@@ -439,9 +524,11 @@ GRAPH_UI_HTML = """<!doctype html>
     const correlationLimitEl = document.getElementById("correlationLimit");
     const maxDegreeEl = document.getElementById("maxDegree");
     const includeVectorEl = document.getElementById("includeVectorCorrelations");
+    const includeGroupingEl = document.getElementById("includeGroupingOpportunities");
     const nightModeEl = document.getElementById("nightMode");
 
-    let graph = { nodes: [], edges: [], memory_count: 0 };
+    let graph = { nodes: [], edges: [], memory_count: 0, grouping_opportunities: [] };
+    let nodeById = new Map();
     let transform = { x: 0, y: 0, scale: 1 };
     let pointer = { x: 0, y: 0 };
     let hover = null;
@@ -461,7 +548,9 @@ GRAPH_UI_HTML = """<!doctype html>
       decision: "--workflow",
       context: "--context",
       note: "--note",
-      fact: "--fact"
+      fact: "--fact",
+      group: "--grouping",
+      grouping: "--grouping"
     };
 
     function cssVar(name) {
@@ -523,7 +612,10 @@ GRAPH_UI_HTML = """<!doctype html>
         include_correlations: true,
         include_vector_correlations: includeVectorEl.checked,
         correlation_limit: Number(correlationLimitEl.value || 250),
-        max_correlation_degree: Number(maxDegreeEl.value || 6)
+        max_correlation_degree: Number(maxDegreeEl.value || 6),
+        include_grouping_opportunities: includeGroupingEl.checked,
+        grouping_limit: 8,
+        grouping_min_size: 3
       };
     }
 
@@ -549,6 +641,8 @@ GRAPH_UI_HTML = """<!doctype html>
         nodeCountEl.textContent = graph.nodes.length;
         edgeCountEl.textContent = graph.edges.length;
         memoryCountEl.textContent = graph.memory_count;
+        groupCountEl.textContent = (graph.grouping_opportunities || []).length;
+        renderGroupingOpportunities();
         setLoadedStatus();
       } catch (error) {
         setStatus(error.message, true);
@@ -569,7 +663,9 @@ GRAPH_UI_HTML = """<!doctype html>
 
     function setLoadedStatus() {
       const hidden = graph.omitted ? `; ${graph.omitted} raw file sections hidden` : "";
-      setStatus(`Loaded ${graph.edges.length} correlations${hidden}`);
+      const groups = (graph.grouping_opportunities || []).length;
+      const groupText = groups ? `; ${groups} grouping opportunities` : "";
+      setStatus(`Loaded ${graph.edges.length} correlations${groupText}${hidden}`);
     }
 
     function hydrateGraph(previousPositions = new Map()) {
@@ -587,7 +683,7 @@ GRAPH_UI_HTML = """<!doctype html>
         node.radius = nodeRadius(node);
         node.degree = 0;
       }
-      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
       graph.edges = graph.edges.filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
       for (const edge of graph.edges) {
         edge.sourceNode = nodeById.get(edge.source);
@@ -598,6 +694,29 @@ GRAPH_UI_HTML = """<!doctype html>
       selected = null;
       hover = null;
       startSimulation();
+    }
+
+    function renderGroupingOpportunities() {
+      const groups = graph.grouping_opportunities || [];
+      groupPanelEl.hidden = !groups.length;
+      groupPanelCountEl.textContent = groups.length;
+      groupListEl.replaceChildren();
+      for (const group of groups) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "group-item";
+        item.dataset.groupNodeId = `group:${group.id}`;
+        const title = document.createElement("strong");
+        title.textContent = group.label;
+        const meta = document.createElement("span");
+        meta.textContent = `${group.member_count} memories · score ${Number(group.score || 0).toFixed(1)} · cohesion ${Number(group.cohesion || 0).toFixed(2)}`;
+        item.append(title, meta);
+        item.addEventListener("click", () => {
+          const node = nodeById.get(item.dataset.groupNodeId);
+          if (node) selectItem(node);
+        });
+        groupListEl.append(item);
+      }
     }
 
     function layoutGraphPositions(nodes, rect) {
@@ -645,6 +764,7 @@ GRAPH_UI_HTML = """<!doctype html>
       const role = graphRole(node);
       if (role === "centroid_candidate") return "01-centroid";
       if (role === "grouping_opportunity") return "02-grouping";
+      if (node.node_type === "group") return "02-grouping";
       return `${node.node_type}:${node.subtype || "memory"}`;
     }
 
@@ -723,7 +843,7 @@ GRAPH_UI_HTML = """<!doctype html>
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const desired = edge.edge_type === "correlation" ? 225 : 165;
+        const desired = edge.edge_type === "correlation" ? 225 : edge.edge_type === "group_member" ? 140 : 165;
         const weight = Math.max(0.35, Math.min(1.35, edge.weight || 1));
         const force = (dist - desired) * 0.0026 * weight;
         const fx = (dx / dist) * force;
@@ -812,13 +932,13 @@ GRAPH_UI_HTML = """<!doctype html>
       const dimmed = Boolean(activeFocusItem()) && !focused;
       ctx.save();
       ctx.globalAlpha = dimmed ? 0.12 : focused ? 0.98 : 0.38;
-      ctx.strokeStyle = focused ? cssVar("--focus") : edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
+      ctx.strokeStyle = focused ? cssVar("--focus") : edge.edge_type === "correlation" ? cssVar("--correlation") : edge.edge_type === "group_member" ? cssVar("--grouping") : cssVar("--edge");
       ctx.lineWidth = focused ? 3.2 : Math.max(0.7, edge.weight || 1);
       if (focused) {
         ctx.shadowColor = cssVar("--focus");
         ctx.shadowBlur = 14;
       }
-      ctx.setLineDash(edge.edge_type === "correlation" ? [5, 5] : []);
+      ctx.setLineDash(edge.edge_type === "correlation" ? [5, 5] : edge.edge_type === "group_member" ? [2, 4] : []);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -827,7 +947,7 @@ GRAPH_UI_HTML = """<!doctype html>
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 0.95;
         ctx.lineWidth = 1.2;
-        ctx.strokeStyle = edge.edge_type === "correlation" ? cssVar("--correlation") : cssVar("--edge");
+        ctx.strokeStyle = edge.edge_type === "correlation" ? cssVar("--correlation") : edge.edge_type === "group_member" ? cssVar("--grouping") : cssVar("--edge");
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
@@ -997,8 +1117,20 @@ GRAPH_UI_HTML = """<!doctype html>
         const role = graphRole(item);
         const roleLabel = graphRoleLabel(role);
         const graphStats = item.metadata?.graph || {};
+        if (item.node_type === "group") {
+          const memberCount = graphStats.member_count || item.metadata?.grouping?.member_count || 0;
+          const cohesion = Number(graphStats.cohesion || 0).toFixed(2);
+          setStatus(`${item.label} - ${memberCount} memories; cohesion ${cohesion}`);
+          draw();
+          return;
+        }
         const degree = graphStats.degree ? ` (${graphStats.degree} links)` : "";
         setStatus(roleLabel ? `${item.label} - ${roleLabel}${degree}` : `${item.label}${degree}`);
+        draw();
+        return;
+      }
+      if (item.edge_type === "group_member") {
+        setStatus("Grouping membership");
         draw();
         return;
       }
@@ -1077,6 +1209,7 @@ GRAPH_UI_HTML = """<!doctype html>
     document.getElementById("spread").addEventListener("click", spreadGraph);
     document.getElementById("fit").addEventListener("click", fitGraph);
     includeVectorEl.addEventListener("change", loadGraph);
+    includeGroupingEl.addEventListener("change", loadGraph);
     nightModeEl.addEventListener("change", applyTheme);
     queryEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter") loadGraph();

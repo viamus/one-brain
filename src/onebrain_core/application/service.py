@@ -5,6 +5,7 @@ import re
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
+from hashlib import sha256
 from itertools import combinations
 from pathlib import PurePosixPath
 from typing import Any
@@ -20,6 +21,7 @@ from onebrain_core.common.text import (
     estimate_tokens,
     extract_heuristic_entities,
     normalize_name,
+    scope_matches,
 )
 from onebrain_core.contracts.schemas import (
     ContextMemory,
@@ -30,6 +32,7 @@ from onebrain_core.contracts.schemas import (
     CorrelationResponse,
     EntityInput,
     GraphEdge,
+    GraphGroupingOpportunity,
     GraphNode,
     GraphRequest,
     GraphResponse,
@@ -404,11 +407,34 @@ class OneBrainService:
         budget_chars = request.max_tokens * 4
         used_chars = 0
         omitted = 0
+        related_hits: list[SearchHit] = []
+        if request.include_related and response.hits:
+            seed_ids = {hit.memory.id for hit in response.hits[:12]}
+            try:
+                related_hits = await self._graph_guided_related_memories(
+                    seed_ids,
+                    request.scope,
+                    limit=20,
+                )
+            except Exception as exc:
+                LOGGER.warning(
+                    "context.graph_guided_related_failed",
+                    seed_count=len(seed_ids),
+                    error=str(exc),
+                )
+                related_hits = await self._related_memories(seed_ids, request.scope, limit=20)
+        direct_budget_chars = budget_chars
+        if related_hits:
+            related_reserve_chars = min(
+                int(budget_chars * 0.28),
+                sum(len(hit.memory.content) + 120 for hit in related_hits),
+            )
+            direct_budget_chars = max(0, budget_chars - related_reserve_chars)
 
         for hit in response.hits:
             item = self._context_memory(hit)
             item_chars = len(item.content) + 120
-            if used_chars + item_chars > budget_chars:
+            if used_chars + item_chars > direct_budget_chars:
                 omitted += 1
                 continue
             used_chars += item_chars
@@ -418,8 +444,7 @@ class OneBrainService:
             else:
                 memories.append(item)
 
-        if request.include_related and used_ids:
-            related_hits = await self._related_memories(used_ids, request.scope, limit=20)
+        if related_hits:
             for hit in related_hits:
                 if hit.memory.id in used_ids:
                     continue
@@ -585,6 +610,16 @@ class OneBrainService:
             )
             self._annotate_graph_insights(nodes, edges)
 
+        grouping_opportunities: list[GraphGroupingOpportunity] = []
+        if request.include_grouping_opportunities and request.include_correlations:
+            grouping_opportunities = self._build_grouping_opportunities(
+                nodes,
+                edges,
+                limit=request.grouping_limit,
+                min_size=request.grouping_min_size,
+            )
+            self._add_grouping_opportunity_nodes(nodes, edges, grouping_opportunities)
+
         return GraphResponse(
             query=request.query,
             nodes=sorted(nodes.values(), key=lambda item: (item.node_type, item.label)),
@@ -592,6 +627,7 @@ class OneBrainService:
             memory_count=len(memories),
             entity_count=len(entity_ids),
             omitted=omitted,
+            grouping_opportunities=grouping_opportunities,
         )
 
     async def health(self) -> dict[str, bool]:
@@ -614,7 +650,12 @@ class OneBrainService:
                 limit=request.limit * 3,
                 filters=filters,
             )
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning(
+                "search.vector_failed",
+                query=request.query,
+                error=str(exc),
+            )
             return []
 
     async def _keyword_search(
@@ -705,6 +746,173 @@ class OneBrainService:
             )
         hits.sort(key=lambda item: item.score, reverse=True)
         return hits[:limit]
+
+    async def _graph_guided_related_memories(
+        self,
+        memory_ids: set[uuid.UUID],
+        scope: dict[str, Any],
+        limit: int,
+    ) -> list[SearchHit]:
+        seed_memories = await self._load_memories(memory_ids)
+        if not seed_memories:
+            return []
+
+        candidate_scores: defaultdict[uuid.UUID, float] = defaultdict(float)
+        candidate_reasons: defaultdict[uuid.UUID, set[str]] = defaultdict(set)
+
+        for hit in await self._related_memories(memory_ids, scope, limit=limit * 2):
+            candidate_scores[hit.memory.id] = max(candidate_scores[hit.memory.id], hit.score)
+            candidate_reasons[hit.memory.id].update(hit.reasons)
+            candidate_reasons[hit.memory.id].add("graph_shared_entity")
+
+        for hit in await self._vector_neighbors_for_memories(seed_memories, scope, limit=limit * 2):
+            if hit.memory.id in memory_ids:
+                continue
+            candidate_scores[hit.memory.id] = max(candidate_scores[hit.memory.id], hit.score)
+            candidate_reasons[hit.memory.id].update(hit.reasons)
+
+        candidate_memories = await self._load_memories(candidate_scores.keys())
+        if not candidate_memories:
+            return []
+
+        scoped_candidates = [
+            memory
+            for memory in candidate_memories
+            if memory.id not in memory_ids and scope_matches(memory.scope, scope)
+        ]
+        candidate_by_id = {memory.id: memory for memory in scoped_candidates}
+        if not candidate_by_id:
+            return []
+
+        graph_memories = [*seed_memories, *scoped_candidates]
+        graph_memory_ids = {memory.id for memory in graph_memories}
+        nodes = {
+            self._memory_node_id(memory.id): self._memory_graph_node(memory)
+            for memory in graph_memories
+            if self._is_graph_memory(memory)
+        }
+        edges: dict[str, GraphEdge] = {}
+
+        entity_rows = [
+            row
+            for row in await self._graph_memory_entities(graph_memory_ids)
+            if self._is_graph_entity(row[2])
+        ]
+        if entity_rows:
+            self._add_correlation_edges(edges, entity_rows, limit=limit * 12)
+        self._add_facet_correlation_edges(
+            edges,
+            graph_memories,
+            limit=limit * 12,
+            max_degree=12,
+        )
+
+        seed_node_ids = {self._memory_node_id(memory_id) for memory_id in memory_ids}
+        for edge in edges.values():
+            candidate_node_id = self._edge_candidate_connected_to_seed(edge, seed_node_ids)
+            if candidate_node_id is None:
+                continue
+            candidate_id = uuid.UUID(candidate_node_id.removeprefix("memory:"))
+            if candidate_id not in candidate_by_id:
+                continue
+            rank = self._correlation_edge_rank(edge)
+            candidate_scores[candidate_id] = max(
+                candidate_scores[candidate_id], min(1.0, rank / 10)
+            )
+            candidate_reasons[candidate_id].add("graph_correlation")
+            raw_reasons = edge.metadata.get("reasons")
+            if isinstance(raw_reasons, list):
+                candidate_reasons[candidate_id].update(str(reason) for reason in raw_reasons)
+
+        opportunities = self._build_grouping_opportunities(
+            nodes,
+            edges,
+            limit=6,
+            min_size=3,
+        )
+        for opportunity in opportunities:
+            if not seed_node_ids.intersection(opportunity.member_node_ids):
+                continue
+            for member_node_id in opportunity.member_node_ids:
+                if not member_node_id.startswith("memory:"):
+                    continue
+                member_id = uuid.UUID(member_node_id.removeprefix("memory:"))
+                if member_id not in candidate_by_id:
+                    continue
+                group_boost = min(0.18, opportunity.score / 80)
+                candidate_scores[member_id] = min(1.0, candidate_scores[member_id] + group_boost)
+                candidate_reasons[member_id].add("graph_grouping_opportunity")
+
+        hits = [
+            SearchHit(
+                memory=MemoryOut.model_validate(memory),
+                score=round(candidate_scores[memory.id], 6),
+                reasons=sorted(candidate_reasons[memory.id]),
+            )
+            for memory in candidate_by_id.values()
+        ]
+        hits.sort(key=lambda item: (-item.score, item.memory.title or "", str(item.memory.id)))
+        return hits[:limit]
+
+    async def _vector_neighbors_for_memories(
+        self,
+        memories: list[Memory],
+        scope: dict[str, Any],
+        *,
+        limit: int,
+    ) -> list[SearchHit]:
+        try:
+            vectors = await self._embeddings.embed(
+                [self._embedding_text(memory) for memory in memories]
+            )
+        except Exception as exc:
+            LOGGER.warning(
+                "context.graph_vector_neighbor_embedding_failed",
+                memory_count=len(memories),
+                error=str(exc),
+            )
+            return []
+
+        scores: defaultdict[uuid.UUID, float] = defaultdict(float)
+        filters: dict[str, Any] = {"status": ["active"]}
+        for memory, vector in zip(memories, vectors, strict=False):
+            try:
+                hits = await self._vector_store.search(vector=vector, limit=limit, filters=filters)
+            except Exception as exc:
+                LOGGER.warning(
+                    "context.graph_vector_neighbor_search_failed",
+                    memory_id=str(memory.id),
+                    error=str(exc),
+                )
+                continue
+            for hit in hits:
+                if hit.memory_id == memory.id:
+                    continue
+                scores[hit.memory_id] = max(scores[hit.memory_id], min(1.0, hit.score))
+
+        loaded = await self._load_memories(scores.keys())
+        return [
+            SearchHit(
+                memory=MemoryOut.model_validate(memory),
+                score=round(scores[memory.id], 6),
+                reasons=["graph_vector_neighbor"],
+            )
+            for memory in loaded
+            if scope_matches(memory.scope, scope)
+        ]
+
+    def _edge_candidate_connected_to_seed(
+        self,
+        edge: GraphEdge,
+        seed_node_ids: set[str],
+    ) -> str | None:
+        source_is_seed = edge.source in seed_node_ids
+        target_is_seed = edge.target in seed_node_ids
+        if source_is_seed and not target_is_seed:
+            return edge.target
+        if target_is_seed and not source_is_seed:
+            return edge.source
+        return None
 
     async def _graph_memories(self, request: GraphRequest) -> list[Memory]:
         if request.memory_ids:
@@ -1294,6 +1502,269 @@ class OneBrainService:
                 node.weight,
                 1.0 + min(1.25, graph_metadata["centrality_normalized"]),
             )
+
+    def _build_grouping_opportunities(
+        self,
+        nodes: dict[str, GraphNode],
+        edges: dict[str, GraphEdge],
+        *,
+        limit: int,
+        min_size: int,
+    ) -> list[GraphGroupingOpportunity]:
+        if limit <= 0:
+            return []
+
+        correlation_edges = [
+            edge
+            for edge in edges.values()
+            if edge.edge_type == "correlation"
+            and edge.source.startswith("memory:")
+            and edge.target.startswith("memory:")
+            and edge.source in nodes
+            and edge.target in nodes
+        ]
+        if not correlation_edges:
+            return []
+
+        adjacency: dict[str, list[GraphEdge]] = defaultdict(list)
+        for edge in correlation_edges:
+            adjacency[edge.source].append(edge)
+            adjacency[edge.target].append(edge)
+
+        candidates: list[GraphGroupingOpportunity] = []
+        for seed, seed_edges in adjacency.items():
+            if len(seed_edges) + 1 < min_size:
+                continue
+            ranked_edges = sorted(
+                seed_edges,
+                key=lambda item: (-self._correlation_edge_rank(item), item.id),
+            )
+            member_ids = {seed}
+            max_member_count = max(min_size, min(12, min_size + 6))
+            for edge in ranked_edges:
+                member_ids.add(edge.target if edge.source == seed else edge.source)
+                if len(member_ids) >= max_member_count:
+                    break
+            if len(member_ids) < min_size:
+                continue
+            candidate = self._grouping_opportunity_for_members(
+                nodes,
+                correlation_edges,
+                member_ids,
+                centroid_node_id=seed,
+            )
+            if candidate:
+                candidates.append(candidate)
+
+        selected: list[GraphGroupingOpportunity] = []
+        selected_members: list[set[str]] = []
+        for candidate in sorted(
+            candidates,
+            key=lambda item: (-item.score, -item.member_count, item.label, item.id),
+        ):
+            candidate_members = set(candidate.member_node_ids)
+            if any(
+                self._jaccard(candidate_members, members) >= 0.72 for members in selected_members
+            ):
+                continue
+            selected.append(candidate)
+            selected_members.append(candidate_members)
+            if len(selected) >= limit:
+                break
+        return selected
+
+    def _grouping_opportunity_for_members(
+        self,
+        nodes: dict[str, GraphNode],
+        correlation_edges: list[GraphEdge],
+        member_ids: set[str],
+        *,
+        centroid_node_id: str,
+    ) -> GraphGroupingOpportunity | None:
+        internal_edges: list[GraphEdge] = []
+        external_edges = 0
+        for edge in correlation_edges:
+            source_in = edge.source in member_ids
+            target_in = edge.target in member_ids
+            if source_in and target_in:
+                internal_edges.append(edge)
+            elif source_in or target_in:
+                external_edges += 1
+
+        if len(internal_edges) < max(2, len(member_ids) - 1):
+            return None
+
+        possible_edges = max(1, len(member_ids) * (len(member_ids) - 1) // 2)
+        internal_rank = sum(self._correlation_edge_rank(edge) for edge in internal_edges)
+        average_rank = internal_rank / max(1, len(internal_edges))
+        cohesion = min(1.0, (len(internal_edges) / possible_edges) * 1.8)
+        separation = len(internal_edges) / max(1, len(internal_edges) + external_edges)
+        score = (
+            average_rank * (0.65 + cohesion) * (0.65 + separation) * math.log2(len(member_ids) + 1)
+        )
+
+        keywords = self._grouping_keywords(nodes, internal_edges, member_ids)
+        label = self._grouping_label(keywords, nodes[centroid_node_id].label)
+        digest = sha256("|".join(sorted(member_ids)).encode("utf-8")).hexdigest()[:12]
+        reasons = self._grouping_reasons(internal_edges)
+        member_labels = [nodes[node_id].label for node_id in sorted(member_ids)]
+        summary = (
+            f"{len(member_ids)} memories form a candidate cluster around "
+            f"{', '.join(keywords[:3]) if keywords else nodes[centroid_node_id].label}."
+        )
+        return GraphGroupingOpportunity(
+            id=digest,
+            label=label,
+            summary=summary,
+            member_node_ids=sorted(member_ids),
+            member_count=len(member_ids),
+            centroid_node_id=centroid_node_id,
+            score=round(score, 4),
+            cohesion=round(cohesion, 4),
+            separation=round(separation, 4),
+            reasons=reasons,
+            keywords=keywords,
+            metadata={
+                "internal_edges": len(internal_edges),
+                "external_edges": external_edges,
+                "average_edge_rank": round(average_rank, 4),
+                "sample_members": member_labels[:8],
+            },
+        )
+
+    def _add_grouping_opportunity_nodes(
+        self,
+        nodes: dict[str, GraphNode],
+        edges: dict[str, GraphEdge],
+        opportunities: list[GraphGroupingOpportunity],
+    ) -> None:
+        for opportunity in opportunities:
+            group_node_id = f"group:{opportunity.id}"
+            nodes[group_node_id] = GraphNode(
+                id=group_node_id,
+                node_type="group",
+                subtype="grouping",
+                label=opportunity.label,
+                summary=opportunity.summary,
+                weight=1.35 + min(1.2, opportunity.score / 20.0),
+                metadata={
+                    "graph": {
+                        "role": "grouping_opportunity",
+                        "member_count": opportunity.member_count,
+                        "cohesion": opportunity.cohesion,
+                        "separation": opportunity.separation,
+                        "score": opportunity.score,
+                    },
+                    "grouping": opportunity.model_dump(mode="json"),
+                },
+            )
+            for member_node_id in opportunity.member_node_ids:
+                if member_node_id not in nodes:
+                    continue
+                edge_id = f"group_member:{opportunity.id}:{member_node_id}"
+                edges[edge_id] = GraphEdge(
+                    id=edge_id,
+                    source=group_node_id,
+                    target=member_node_id,
+                    edge_type="group_member",
+                    label="member",
+                    weight=0.5,
+                    confidence=max(0.35, opportunity.cohesion),
+                    metadata={
+                        "group_id": opportunity.id,
+                        "score": opportunity.score,
+                        "reasons": opportunity.reasons,
+                    },
+                )
+                node_group_ids = nodes[member_node_id].metadata.setdefault("group_ids", [])
+                if isinstance(node_group_ids, list) and opportunity.id not in node_group_ids:
+                    node_group_ids.append(opportunity.id)
+
+    def _grouping_keywords(
+        self,
+        nodes: dict[str, GraphNode],
+        internal_edges: list[GraphEdge],
+        member_ids: set[str],
+    ) -> list[str]:
+        weights: defaultdict[str, float] = defaultdict(float)
+        for edge in internal_edges:
+            rank = self._correlation_edge_rank(edge)
+            facets = edge.metadata.get("shared_facets")
+            entities = edge.metadata.get("shared_entities")
+            facet_values = facets if isinstance(facets, list) else []
+            entity_values = entities if isinstance(entities, list) else []
+            for facet in facet_values:
+                keyword = self._keyword_from_grouping_facet(str(facet))
+                if keyword:
+                    weights[keyword] += rank
+            for entity in entity_values:
+                keyword = self._humanize_grouping_keyword(str(entity))
+                if keyword:
+                    weights[keyword] += rank * 0.8
+
+        for node_id in member_ids:
+            for term in self._correlation_terms(nodes[node_id].label, limit=8):
+                weights[self._humanize_grouping_keyword(term)] += 0.35
+
+        return [
+            keyword
+            for keyword, _ in sorted(
+                weights.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:8]
+        ]
+
+    def _keyword_from_grouping_facet(self, facet: str) -> str | None:
+        if ":" not in facet:
+            return None
+        prefix, value = facet.split(":", 1)
+        if prefix not in {"term", "phrase", "tag"}:
+            return None
+        return self._humanize_grouping_keyword(value)
+
+    def _humanize_grouping_keyword(self, value: str) -> str:
+        tokens = [
+            token
+            for token in re.split(r"[\s_:/=-]+", normalize_name(value))
+            if self._is_correlation_term(token)
+        ][:4]
+        acronyms = {
+            "acl",
+            "ado",
+            "api",
+            "ci",
+            "css",
+            "e2e",
+            "gdpr",
+            "http",
+            "lgpd",
+            "mcp",
+            "rpa",
+            "sso",
+            "tms",
+            "xml",
+        }
+        return " ".join(token.upper() if token in acronyms else token.title() for token in tokens)
+
+    def _grouping_label(self, keywords: list[str], fallback: str) -> str:
+        if keywords:
+            return f"{' / '.join(keywords[:3])} Cluster"
+        return f"{fallback} Cluster"
+
+    def _grouping_reasons(self, internal_edges: list[GraphEdge]) -> list[str]:
+        reasons: set[str] = set()
+        for edge in internal_edges:
+            raw_reasons = edge.metadata.get("reasons")
+            if isinstance(raw_reasons, list):
+                reasons.update(str(reason) for reason in raw_reasons)
+            elif edge.label:
+                reasons.add(edge.label)
+        return sorted(reasons)
+
+    def _jaccard(self, left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        return len(left & right) / len(left | right)
 
     def _correlation_edge_count(self, edges: dict[str, GraphEdge]) -> int:
         return sum(1 for edge in edges.values() if edge.edge_type == "correlation")

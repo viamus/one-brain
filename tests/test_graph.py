@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from onebrain_core.application.service import OneBrainService
 from onebrain_core.contracts.schemas import (
+    ContextRequest,
     GraphEdge,
     GraphNode,
     GraphRequest,
     GraphResponse,
+    MemoryOut,
+    SearchHit,
     SearchRequest,
 )
 from onebrain_core.infrastructure.models import Entity, Memory
@@ -27,6 +31,21 @@ def test_graph_request_normalizes_blank_query() -> None:
     assert request.include_vector_correlations is True
     assert request.max_correlation_degree == 6
     assert request.vector_neighbors_per_memory == 4
+    assert request.include_grouping_opportunities is True
+    assert request.grouping_limit == 8
+    assert request.grouping_min_size == 3
+
+
+def memory_for_test(**kwargs) -> Memory:
+    defaults = {
+        "status": "active",
+        "metadata_": {},
+        "vector_status": "indexed",
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
+    }
+    defaults.update(kwargs)
+    return Memory(**defaults)
 
 
 def test_graph_response_keeps_machine_readable_nodes_and_edges() -> None:
@@ -55,6 +74,7 @@ def test_graph_response_keeps_machine_readable_nodes_and_edges() -> None:
 
     assert response.nodes[0].id == "memory:1"
     assert response.edges[0].edge_type == "correlation"
+    assert response.grouping_opportunities == []
 
 
 def test_correlation_edges_aggregate_shared_entities() -> None:
@@ -353,6 +373,88 @@ def test_graph_insights_annotate_centroid_candidates() -> None:
     assert nodes[center_id].weight > 1.0
 
 
+def test_graph_grouping_opportunities_build_cluster_nodes() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    center_id = "memory:center"
+    nodes = {
+        center_id: GraphNode(id=center_id, node_type="memory", label="LGPD privacy checklist"),
+    }
+    edges: dict[str, GraphEdge] = {}
+    for index in range(3):
+        node_id = f"memory:{index}"
+        nodes[node_id] = GraphNode(
+            id=node_id,
+            node_type="memory",
+            label=f"LGPD privacy assessment {index}",
+        )
+        edges[f"correlation:center:{index}"] = GraphEdge(
+            id=f"correlation:center:{index}",
+            source=center_id,
+            target=node_id,
+            edge_type="correlation",
+            label="semantic_overlap",
+            weight=0.9,
+            confidence=0.9,
+            metadata={
+                "reasons": ["semantic_overlap", "vector_neighbor"],
+                "shared_facets": ["term:lgpd", "phrase:privacy assessment"],
+                "score": 8.0,
+            },
+        )
+
+    opportunities = service._build_grouping_opportunities(
+        nodes,
+        edges,
+        limit=4,
+        min_size=3,
+    )
+    service._add_grouping_opportunity_nodes(nodes, edges, opportunities)
+
+    assert len(opportunities) == 1
+    opportunity = opportunities[0]
+    assert opportunity.member_count == 4
+    assert opportunity.centroid_node_id == center_id
+    assert "LGPD" in opportunity.label
+    assert opportunity.cohesion > 0
+    assert opportunity.reasons == ["semantic_overlap", "vector_neighbor"]
+    assert f"group:{opportunity.id}" in nodes
+    assert nodes[f"group:{opportunity.id}"].metadata["graph"]["role"] == "grouping_opportunity"
+    assert len([edge for edge in edges.values() if edge.edge_type == "group_member"]) == 4
+
+
+def test_graph_grouping_opportunities_deduplicate_overlapping_seeds() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    nodes = {
+        f"memory:{index}": GraphNode(
+            id=f"memory:{index}",
+            node_type="memory",
+            label=f"TMS release readiness {index}",
+        )
+        for index in range(4)
+    }
+    edges: dict[str, GraphEdge] = {}
+    for left, right in (("0", "1"), ("0", "2"), ("0", "3"), ("1", "2"), ("2", "3")):
+        edges[f"correlation:{left}:{right}"] = GraphEdge(
+            id=f"correlation:{left}:{right}",
+            source=f"memory:{left}",
+            target=f"memory:{right}",
+            edge_type="correlation",
+            label="vector_neighbor",
+            weight=0.9,
+            confidence=0.9,
+            metadata={"reasons": ["vector_neighbor"], "score": 9.0},
+        )
+
+    opportunities = service._build_grouping_opportunities(
+        nodes,
+        edges,
+        limit=8,
+        min_size=3,
+    )
+
+    assert len(opportunities) == 1
+
+
 def test_memory_graph_label_derives_source_context_for_generic_document_body() -> None:
     service = OneBrainService.__new__(OneBrainService)
     memory = Memory(
@@ -532,6 +634,185 @@ async def test_safe_vector_search_returns_empty_when_embedding_fails() -> None:
     assert await service._safe_vector_search(SearchRequest(query="onebrain")) == []
 
 
+@pytest.mark.asyncio
+async def test_compose_context_uses_graph_guided_related_memories() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    seed_id = uuid.uuid4()
+    entity_candidate_id = uuid.uuid4()
+    vector_candidate_id = uuid.uuid4()
+    shared_entity = Entity(
+        id=uuid.uuid4(),
+        name="LGPD",
+        normalized_name="lgpd",
+        entity_type="concept",
+    )
+    memories_by_id = {
+        seed_id: memory_for_test(
+            id=seed_id,
+            memory_type="context",
+            title="LGPD privacy assessment seed",
+            content="LGPD privacy assessment seed context.",
+            content_hash="seed",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.9,
+            source_type="manual",
+        ),
+        entity_candidate_id: memory_for_test(
+            id=entity_candidate_id,
+            memory_type="context",
+            title="LGPD checklist controls",
+            content="LGPD checklist controls and privacy assessment guidance.",
+            content_hash="entity",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.85,
+            source_type="manual",
+        ),
+        vector_candidate_id: memory_for_test(
+            id=vector_candidate_id,
+            memory_type="context",
+            title="Privacy controls readiness",
+            content="Privacy controls readiness for LGPD assessment.",
+            content_hash="vector",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.82,
+            source_type="manual",
+        ),
+    }
+
+    async def fake_search(request: SearchRequest):
+        assert request.include_graph is True
+        return SimpleNamespace(
+            hits=[
+                SearchHit(
+                    memory=MemoryOut.model_validate(memories_by_id[seed_id]),
+                    score=0.95,
+                    reasons=["keyword"],
+                )
+            ]
+        )
+
+    async def fake_load_memories(memory_ids):
+        return [
+            memories_by_id[memory_id] for memory_id in memory_ids if memory_id in memories_by_id
+        ]
+
+    async def fake_related_memories(memory_ids, scope, limit):
+        assert seed_id in memory_ids
+        return [
+            SearchHit(
+                memory=MemoryOut.model_validate(memories_by_id[entity_candidate_id]),
+                score=0.55,
+                reasons=["shared_entity"],
+            )
+        ]
+
+    async def fake_graph_memory_entities(memory_ids):
+        return [
+            (seed_id, "subject", shared_entity),
+            (entity_candidate_id, "subject", shared_entity),
+        ]
+
+    class FakeEmbeddings:
+        async def embed(self, texts):
+            return [[1.0, 0.0] for _ in texts]
+
+    class FakeVectorStore:
+        async def search(self, *, vector, limit, filters):
+            assert filters == {"status": ["active"]}
+            return [
+                SimpleNamespace(memory_id=seed_id, score=1.0),
+                SimpleNamespace(memory_id=vector_candidate_id, score=0.9),
+            ]
+
+    service.search = fake_search
+    service._load_memories = fake_load_memories
+    service._related_memories = fake_related_memories
+    service._graph_memory_entities = fake_graph_memory_entities
+    service._embeddings = FakeEmbeddings()
+    service._vector_store = FakeVectorStore()
+
+    context = await service.compose_context(
+        ContextRequest(task="LGPD privacy", scope={"project": "one-brain"}, include_related=True)
+    )
+
+    related_by_id = {item.id: item for item in context.related}
+
+    assert entity_candidate_id in related_by_id
+    assert vector_candidate_id in related_by_id
+    assert "graph_shared_entity" in related_by_id[entity_candidate_id].reasons
+    assert "graph_correlation" in related_by_id[entity_candidate_id].reasons
+    assert "graph_vector_neighbor" in related_by_id[vector_candidate_id].reasons
+
+
+@pytest.mark.asyncio
+async def test_compose_context_falls_back_when_graph_guided_related_fails() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    seed_id = uuid.uuid4()
+    related_id = uuid.uuid4()
+    memories_by_id = {
+        seed_id: memory_for_test(
+            id=seed_id,
+            memory_type="context",
+            title="LGPD privacy seed",
+            content="LGPD privacy seed context.",
+            content_hash="seed",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.9,
+            source_type="manual",
+        ),
+        related_id: memory_for_test(
+            id=related_id,
+            memory_type="context",
+            title="Fallback related privacy controls",
+            content="Fallback related privacy controls.",
+            content_hash="related",
+            scope={"project": "one-brain"},
+            tags=[],
+            confidence=0.82,
+            source_type="manual",
+        ),
+    }
+
+    async def fake_search(request: SearchRequest):
+        return SimpleNamespace(
+            hits=[
+                SearchHit(
+                    memory=MemoryOut.model_validate(memories_by_id[seed_id]),
+                    score=0.95,
+                    reasons=["keyword"],
+                )
+            ]
+        )
+
+    async def failing_graph_related(memory_ids, scope, limit):
+        raise RuntimeError("graph unavailable")
+
+    async def fallback_related(memory_ids, scope, limit):
+        assert seed_id in memory_ids
+        return [
+            SearchHit(
+                memory=MemoryOut.model_validate(memories_by_id[related_id]),
+                score=0.5,
+                reasons=["shared_entity"],
+            )
+        ]
+
+    service.search = fake_search
+    service._graph_guided_related_memories = failing_graph_related
+    service._related_memories = fallback_related
+
+    context = await service.compose_context(
+        ContextRequest(task="LGPD privacy", scope={"project": "one-brain"}, include_related=True)
+    )
+
+    assert [item.id for item in context.related] == [related_id]
+    assert context.related[0].reasons == ["shared_entity"]
+
+
 def test_graph_view_html_points_to_graph_endpoint() -> None:
     html = graph_view_html()
 
@@ -547,9 +828,11 @@ def test_graph_view_html_exposes_correlation_controls() -> None:
     html = graph_view_html()
 
     assert 'id="includeVectorCorrelations" type="checkbox" checked' in html
+    assert 'id="includeGroupingOpportunities" type="checkbox" checked' in html
     assert 'id="correlationLimit" type="number" min="0" max="2000"' in html
     assert 'id="maxDegree" type="number" min="1" max="50"' in html
     assert "include_vector_correlations: includeVectorEl.checked" in html
+    assert "include_grouping_opportunities: includeGroupingEl.checked" in html
     assert "correlation_limit: Number(correlationLimitEl.value || 250)" in html
     assert "max_correlation_degree: Number(maxDegreeEl.value || 6)" in html
 
@@ -564,6 +847,8 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     assert "document.documentElement.dataset.theme" in html
     assert "centroid_candidate" in html
     assert "grouping_opportunity" in html
+    assert "Grouping Opportunities" in html
+    assert "grouping_opportunities" in html
     assert "function edgeIsFocused(edge)" in html
     assert "ctx.shadowBlur = 14" in html
     assert "function layoutGraphPositions(nodes, rect)" in html
