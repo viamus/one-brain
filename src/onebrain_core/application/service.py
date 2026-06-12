@@ -69,6 +69,7 @@ CORRELATION_STOPWORDS = {
     "against",
     "also",
     "always",
+    "ambevtech",
     "and",
     "antes",
     "are",
@@ -79,6 +80,8 @@ CORRELATION_STOPWORDS = {
     "because",
     "been",
     "being",
+    "body",
+    "branch",
     "browser",
     "cada",
     "caso",
@@ -86,6 +89,8 @@ CORRELATION_STOPWORDS = {
     "codex",
     "com",
     "como",
+    "configura",
+    "commit",
     "content",
     "context",
     "data",
@@ -93,6 +98,7 @@ CORRELATION_STOPWORDS = {
     "details",
     "deve",
     "does",
+    "document",
     "dos",
     "ela",
     "ele",
@@ -107,6 +113,7 @@ CORRELATION_STOPWORDS = {
     "false",
     "file",
     "files",
+    "fonte",
     "for",
     "from",
     "guidance",
@@ -118,6 +125,8 @@ CORRELATION_STOPWORDS = {
     "inside",
     "into",
     "its",
+    "manifest",
+    "meta",
     "items",
     "json",
     "latest",
@@ -136,6 +145,8 @@ CORRELATION_STOPWORDS = {
     "not",
     "only",
     "onebrain",
+    "options",
+    "padr",
     "para",
     "pela",
     "pelo",
@@ -145,6 +156,7 @@ CORRELATION_STOPWORDS = {
     "que",
     "query",
     "read",
+    "readme",
     "reference",
     "references",
     "repo",
@@ -160,9 +172,11 @@ CORRELATION_STOPWORDS = {
     "status",
     "sua",
     "summary",
+    "target",
     "the",
     "this",
     "text",
+    "topic",
     "toolbox",
     "toolkit",
     "true",
@@ -181,8 +195,11 @@ CORRELATION_STOPWORDS = {
 }
 
 GENERIC_MEMORY_TITLES = {
+    "body",
     "document",
     "document body",
+    "manifest",
+    "readme",
 }
 
 
@@ -2193,6 +2210,8 @@ class OneBrainService:
             memory.content
         )
 
+        if source_label and self._is_named_catalog_artifact(relative_path):
+            return source_label
         if section_title and not self._is_generic_memory_title(section_title):
             if source_label:
                 return f"{source_label}: {section_title}"
@@ -2233,8 +2252,41 @@ class OneBrainService:
         normalized = value.replace("\\", "/").rstrip("/")
         if not normalized:
             return None
-        name = PurePosixPath(normalized).name
+        path = PurePosixPath(normalized)
+        name = path.name
+        if self._is_named_catalog_artifact(normalized):
+            parent = path.parent.name
+            if parent:
+                return self._humanize_source_label(parent)
         return name or normalized
+
+    def _is_named_catalog_artifact(self, value: str | None) -> bool:
+        if not value:
+            return False
+        name = PurePosixPath(value.replace("\\", "/").rstrip("/")).name.lower()
+        return name in {"body.md", "manifest.json", "workflow.json", "library.json", "readme.md"}
+
+    def _humanize_source_label(self, value: str) -> str:
+        cleaned = re.sub(r"^(feedback|reference|project|memory|skill)_", "", value.strip())
+        tokens = [token for token in re.split(r"[\s_.-]+", normalize_name(cleaned)) if token]
+        acronyms = {
+            "acl",
+            "ado",
+            "api",
+            "ci",
+            "css",
+            "e2e",
+            "gdpr",
+            "http",
+            "lgpd",
+            "mcp",
+            "rpa",
+            "sso",
+            "tms",
+            "ui",
+            "xml",
+        }
+        return " ".join(token.upper() if token in acronyms else token.title() for token in tokens)
 
     def _summary_from_content(self, content: str) -> str | None:
         match = re.search(r"(?im)^Summary:\s*(.+?)\s*$", content)

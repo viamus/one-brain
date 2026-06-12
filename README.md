@@ -12,6 +12,7 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 - Stores embeddings in Qdrant for semantic recall.
 - Builds a correlation view across memories, skills, workflows, and shared entities.
 - Builds deterministic context packs for LLM callers.
+- Classifies imported memory type with heuristic guardrails plus a lightweight ML fallback.
 - Exposes OneBrain Web for human graph exploration.
 - Exposes OneBrain API for memory, skill, graph, and contextual ingestion workflows.
 - Exposes OneBrain MCP over HTTP and stdio for Codex and other MCP clients.
@@ -35,7 +36,7 @@ flowchart LR
     Infra --> Postgres["PostgreSQL<br/>canonical memory"]
     Infra --> Qdrant["Qdrant<br/>vector recall"]
     Infra --> Embed["Embedding Provider<br/>OpenAI / fastembed / hash"]
-    ML["onebrain_ml<br/>future ranking and graph intelligence"] -. optional scoring .-> Core
+    ML["onebrain_ml<br/>memory classification<br/>future ranking"] -. optional scoring .-> Core
 ```
 
 Core responsibilities:
@@ -47,6 +48,7 @@ Core responsibilities:
 - **onebrain_mcp**: agent interface for capture, search, correlation, and context composition.
 - **onebrain_jobs**: background workers and schedulers, starting with graph aggregation.
 - **onebrain_host**: Django, ASGI, URL, settings, and runtime composition.
+- **onebrain_ml**: lightweight machine-learning extensions, starting with memory type classification.
 - **Graph view**: local visual map of semantic, explicit, and shared-entity correlations.
 - **Calling LLM**: reasoning, interpretation, conflict analysis, and task-specific decisions.
 
@@ -62,7 +64,7 @@ flowchart TB
         Jobs["onebrain_jobs<br/>scheduled workers"]
         Core["onebrain_core<br/>domain contracts, ingestion, graph logic"]
         Infra["onebrain_infra<br/>SQLAlchemy, Qdrant, embeddings"]
-        ML["onebrain_ml<br/>reserved ML boundary"]
+        ML["onebrain_ml<br/>memory classification"]
     end
 
     Host --> API
@@ -77,7 +79,7 @@ flowchart TB
     Infra --> DB["PostgreSQL"]
     Infra --> Vector["Qdrant"]
     Infra --> Embeddings["Embedding provider"]
-    ML -. future rankers .-> Core
+    ML -. classifies ambiguous memories .-> Core
 ```
 
 ```mermaid
@@ -105,7 +107,7 @@ flowchart LR
 +-- src/onebrain_mcp/          # MCP tools, auth, stdio, and HTTP ASGI app
 +-- src/onebrain_jobs/         # Background jobs, schedulers, and Django management commands
 +-- src/onebrain_host/         # Django/ASGI/runtime composition and health endpoints
-+-- src/onebrain_ml/           # Reserved boundary for future ML ranking/correlation work
++-- src/onebrain_ml/           # ML memory classification and future ranking/correlation work
 +-- src/onebrain_django/       # Compatibility namespace for the former monolith package
 +-- manage.py                  # Host management entry point
 +-- migrations/                # Alembic migrations
@@ -162,17 +164,15 @@ Open:
 - API: `http://localhost:8088/api/v1`
 - MCP HTTP: `http://localhost:8090/mcp`
 
-Stop the stack:
+Stop the OneBrain stack:
 
 ```powershell
 docker compose down
 ```
 
-Stop and remove persisted local data:
-
-```powershell
-docker compose down -v
-```
+OneBrain stores PostgreSQL, Qdrant, job state, and ML artifacts in external Docker volumes by
+default. Use `.\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge the
+local knowledge database.
 
 ## Docker Compose Services
 
@@ -190,7 +190,8 @@ The Compose file overrides container network URLs automatically:
 
 - Docker services use `postgres:5432`, not `localhost:5432`.
 - Docker services use `qdrant:6333`, not `localhost:6333`.
-- The API and MCP services mount `C:\DoxieOS` as `/mnt/doxie` for catalog ingestion and MCP file imports.
+- The API, MCP, and Jobs services mount `C:\DoxieOS\github-private-catalog` as
+  `/mnt/github-private-catalog` for private catalog ingestion and MCP file imports.
 
 Your `.env` can still use `localhost` for host-based development.
 
@@ -206,6 +207,7 @@ ONEBRAIN_API_KEYS=
 ONEBRAIN_API_PORT=8088
 ONEBRAIN_WEB_PORT=8089
 ONEBRAIN_MCP_PORT=8090
+ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=artifacts/memory-classifier.json
 ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
@@ -345,6 +347,87 @@ environment-configurable defaults:
 - `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT`
 - `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE`
 
+### Memory Type Classification
+
+OneBrain classifies imported memories with two layers:
+
+- **Heuristic guardrails**: explicit frontmatter, known paths, skill files, code/config extensions, and other high-confidence signals still win.
+- **ML fallback**: ambiguous text is scored by `onebrain_ml.memory_classification`, a deterministic Naive Bayes classifier trained from seed examples plus accepted/corrected OneBrain memories for `rule`, `preference`, `workflow`, `skill`, `decision`, `pitfall`, `context`, `runbook`, `fact`, and `note`.
+
+The selected classification is stored in each imported memory payload under:
+
+```json
+{
+  "metadata": {
+    "memory_classification": {
+      "memory_type": "decision",
+      "confidence": 0.73,
+      "method": "ml",
+      "model_version": "onebrain-memory-type-naive-bayes-v1",
+      "reasons": ["text contains decision", "text contains consequences"]
+    }
+  }
+}
+```
+
+This keeps classification explainable while giving OneBrain a feedback loop:
+
+- Manual or heuristic high-confidence memories can become training examples.
+- ML-classified memories are not used as training examples by default, which avoids self-training on unreviewed predictions.
+- Accepted ML classifications can opt in with `metadata.memory_classification.accepted=true`.
+- Corrections can opt in with `metadata.memory_type_correction.corrected_type`.
+- Explicit labels can opt in with `metadata.classification_training.memory_type`.
+
+Train, validate, cross-validate, and publish a runtime artifact from the current OneBrain memories:
+
+```powershell
+docker compose run --rm onebrain-jobs `
+  onebrain-jobs train_memory_classifier `
+  --model-out /var/lib/onebrain/ml/memory-classifier.json `
+  --json
+```
+
+The Docker stack mounts `/var/lib/onebrain/ml` as the external `onebrain_ml_artifacts` volume, and API/Web/MCP load
+`ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH` from that shared location. The runtime watches the model
+file timestamp, so a newly trained artifact is picked up on the next classification call.
+
+For offline experiments with a labeled JSON/JSONL dataset:
+
+```powershell
+uv run onebrain-memory-classifier train `
+  --dataset .\datasets\memory-classification.jsonl `
+  --model-out .\artifacts\memory-classifier.json `
+  --folds 5
+```
+
+For GitHub repos or local folders that should train the classifier without feeding OneBrain
+memories, use `--training-docs`. The trainer reads the files, extracts only strong labels, and
+never calls the ingestion API:
+
+```powershell
+git clone https://github.com/ciembor/agent-rules-books.git C:\DoxieOS\training-corpora\agent-rules-books
+
+uv run onebrain-jobs train_memory_classifier `
+  --training-docs C:\DoxieOS\training-corpora\agent-rules-books `
+  --training-docs-source-ref-prefix github://ciembor/agent-rules-books `
+  --model-out .\artifacts\memory-classifier.json `
+  --max-examples-per-type 80 `
+  --folds 3 `
+  --json
+```
+
+Inside Docker, use the mounted private catalog path:
+
+```powershell
+docker compose run --rm onebrain-jobs `
+  onebrain-jobs train_memory_classifier `
+  --training-docs /mnt/github-private-catalog `
+  --training-docs-source-ref-prefix catalog://github-private-catalog `
+  --model-out /var/lib/onebrain/ml/memory-classifier.json `
+  --folds 3 `
+  --json
+```
+
 ### Contextual Ingestion API
 
 The ingestion API is intentionally two-phase. First analyze files into a plan with macro context memories and child section memories. Then commit the reviewed plan into OneBrain, creating explicit `contains` links between parent and child memories.
@@ -358,14 +441,14 @@ context locally, then the importer calls the API `/api/v1/ingestion/analyze` and
 `/api/v1/ingestion/commit`.
 
 When Docker serves the API, pass the local path and let the importer translate host paths into
-container paths. By default it knows `C:\DoxieOS=/mnt/doxie`; override with `--path-mappings` or
-`--api-path` when needed.
+container paths. The Compose stack mounts `C:\DoxieOS\github-private-catalog` as
+`/mnt/github-private-catalog`; pass `--api-path` when importing through Docker.
 
 ```powershell
 $env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"organization":"abinbev","catalog":"private-engineering-catalog"}'
 uv run onebrain-local-import `
   --docs C:\DoxieOS\github-private-catalog\libraries\ambevtech-developer-memory `
-  --api-url http://127.0.0.1:8088/api/v1 `
+  --api-url http://localhost:8088/api/v1 `
   --api-key $env:ONEBRAIN_MCP_CLIENT_KEY `
   --source-type private-catalog-library `
   --source-ref-prefix catalog://private/libraries/ambevtech-developer-memory `
@@ -383,12 +466,15 @@ Useful switches:
 By default the importer learns from every eligible source document under `--docs`. Use
 `--max-files` only for smoke tests or partial imports.
 
+For clean corpus ingestion and graph-correlation experiments, use the lab runbook:
+[docs/corpus-lab.md](docs/corpus-lab.md).
+
 Analyze a catalog library from Docker:
 
 ```powershell
 $headers = @{ Authorization = "Bearer dev-key-1" }
 $body = @{
-  path = "/mnt/doxie/github-private-catalog/libraries/ambevtech-developer-memory"
+  path = "/mnt/github-private-catalog/libraries/ambevtech-developer-memory"
   source_type = "private-catalog-library"
   source_ref_prefix = "catalog://private/libraries/ambevtech-developer-memory"
   include_examples = $false
@@ -649,8 +735,8 @@ Bulk import local text files with hardening and exact `source_ref` dedupe:
 ```
 
 Use `dry_run=true` to inspect counts, classifications, and redactions without storing
-memories. The Docker Compose MCP service maps `C:\DoxieOS` to `/mnt/doxie` so tools can
-read catalog libraries from inside the container.
+memories. The Docker Compose MCP service maps `C:\DoxieOS\github-private-catalog` to
+`/mnt/github-private-catalog` so tools can read catalog libraries from inside the container.
 
 ## Local Development Without Docker Services
 
@@ -711,15 +797,21 @@ Review generated migrations before committing.
 
 ## Data Persistence
 
-Docker volumes:
+External Docker volumes:
 
-- `postgres_data`
-- `qdrant_storage`
+- `onebrain_postgres_data`
+- `onebrain_qdrant_storage`
+- `onebrain_job_status`
+- `onebrain_ml_artifacts`
+
+Because these volumes are declared as external in `docker-compose.yml`, normal container restarts,
+`docker compose down`, and project renames do not remove them.
 
 Backup expectations for production:
 
 - PostgreSQL backups with PITR where possible.
 - Qdrant snapshots.
+- Memory classifier artifacts when trained models are promoted.
 - Migration history kept in source control.
 - Explicit restore drills before relying on backups.
 

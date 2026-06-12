@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from onebrain_core.application.memory_hardening import classify_file_memory_result
 from onebrain_core.common.text import content_hash
 from onebrain_core.contracts.schemas import MemoryCreate
 
@@ -360,9 +361,25 @@ def _child_item(
     item_id = _stable_id("item", relative_path, str(order_index), section.title)
     item_hash = content_hash(content, scope)
     child_source_ref = f"{source_ref}#section-{order_index}"
+    classification = classify_file_memory_result(
+        relative_path,
+        {},
+        Path(relative_path).suffix.lower(),
+        title=title,
+        content=content,
+    )
+    if parser in {"json", "yaml"} and classification.memory_type == "note":
+        classification = classification.__class__(
+            memory_type="fact",
+            confidence=0.7,
+            method="heuristic",
+            reasons=["structured_parser_fallback"],
+            runner_up=classification.runner_up,
+            runner_up_confidence=classification.runner_up_confidence,
+        )
     payload = _validated_payload(
         {
-            "memory_type": _memory_type_for_child(parser),
+            "memory_type": classification.memory_type,
             "title": title,
             "content": content,
             "scope": scope,
@@ -380,6 +397,7 @@ def _child_item(
                 "order_index": order_index,
                 "summary": summary,
                 "section_title": section.title,
+                "memory_classification": classification.as_metadata(),
             },
         }
     )
@@ -582,12 +600,6 @@ def _title_for_file(relative_path: str, sections: list[ParsedSection]) -> str:
     if first_heading:
         return _shorten(first_heading, 240)
     return _shorten(Path(relative_path).name, 240)
-
-
-def _memory_type_for_child(parser: str) -> str:
-    if parser in {"json", "yaml"}:
-        return "fact"
-    return "note"
 
 
 def _tags(relative_path: str, parser: str, item_type: str) -> list[str]:

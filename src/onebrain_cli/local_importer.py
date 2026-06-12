@@ -31,12 +31,26 @@ from onebrain_core.contracts.schemas import (
     IngestionPlan,
     MemoryCreate,
 )
+from onebrain_ml.memory_classification import MemoryClassificationInput, classify_memory_type
 
 DEFAULT_API_URL = "http://127.0.0.1:8088/api/v1"
 DEFAULT_PATH_MAPPINGS = r"C:\DoxieOS=/mnt/doxie"
 DEFAULT_API_TIMEOUT_SECONDS = 300.0
 DEFAULT_COMMIT_BATCH_SIZE = 25
 T = TypeVar("T")
+
+MACRO_CLASSIFICATION_MIN_CONFIDENCE_BY_TYPE = {
+    "context": 0.0,
+    "decision": 0.7,
+    "fact": 0.62,
+    "note": 0.95,
+    "pitfall": 0.72,
+    "preference": 0.9,
+    "rule": 0.58,
+    "runbook": 0.68,
+    "skill": 0.5,
+    "workflow": 0.58,
+}
 
 
 class KnowledgeEntityContext(BaseModel):
@@ -812,11 +826,27 @@ def _enriched_macro_item(
     payload = item.payload.model_copy(deep=True)
     payload.title = context.title
     payload.content = _macro_content(payload.content, context, contextualizer_name)
+    classification = classify_memory_type(
+        MemoryClassificationInput(
+            relative_path=_item_relative_path(item, payload),
+            extension=_item_file_extension(item, payload),
+            title=context.title,
+            content=payload.content,
+        )
+    )
+    memory_type, classification_applied = _selected_macro_memory_type(
+        item,
+        payload,
+        classification.memory_type,
+        classification.confidence,
+    )
+    payload.memory_type = memory_type
     payload.tags = _merge_tags(
         payload.tags,
         [
             "knowledge:imported",
             "ingestion:contextualized",
+            f"memory-type:{memory_type}",
             f"contextualizer:{_tag_slug(contextualizer_name)}",
             *_context_tags(context, contextualizer_name),
         ],
@@ -834,21 +864,33 @@ def _enriched_macro_item(
         "contextualizer": contextualizer_name,
         "contextualized": True,
         "ingestion_version": "knowledge-v3",
+        "memory_classification": {
+            **classification.as_metadata(),
+            "applied": classification_applied,
+            "selected_memory_type": memory_type,
+        },
     }
     payload = MemoryCreate.model_validate(payload.model_dump(mode="json"))
     return item.model_copy(
         update={
+            "memory_type": memory_type,
             "title": context.title,
             "summary": context.summary,
             "payload": payload,
             "findings": [
                 *item.findings,
                 f"{_tag_slug(contextualizer_name).replace('-', '_')}_contextualized",
+                f"memory_type_classified_as_{memory_type}",
             ],
             "metadata": {
                 **item.metadata,
                 "contextualizer": contextualizer_name,
                 "contextualized": True,
+                "memory_classification": {
+                    **classification.as_metadata(),
+                    "applied": classification_applied,
+                    "selected_memory_type": memory_type,
+                },
             },
         }
     )
@@ -886,6 +928,54 @@ def _enriched_child_item(
             ],
         }
     )
+
+
+def _item_relative_path(item: IngestionItem, payload: MemoryCreate) -> str:
+    value = payload.metadata.get("relative_path") or item.metadata.get("relative_path")
+    return str(value or "")
+
+
+def _item_file_extension(item: IngestionItem, payload: MemoryCreate) -> str:
+    value = payload.metadata.get("file_extension") or item.metadata.get("file_extension")
+    if value:
+        return str(value)
+    relative_path = _item_relative_path(item, payload)
+    return Path(relative_path).suffix
+
+
+def _selected_macro_memory_type(
+    item: IngestionItem,
+    payload: MemoryCreate,
+    predicted_type: str,
+    confidence: float,
+) -> tuple[str, bool]:
+    relative_path = _item_relative_path(item, payload).replace("\\", "/").lower()
+    if relative_path.endswith("/skill.md") or relative_path.endswith("/agents.md"):
+        return "skill", True
+    if relative_path.endswith("/claude.md") and "skill" in payload.content.lower():
+        return "skill", True
+    if "/references/" in relative_path or "/reference/" in relative_path:
+        return "fact", True
+    if "/workflows/" in relative_path or "/workflow/" in relative_path:
+        return "workflow", True
+    if any(
+        marker in relative_path
+        for marker in (
+            "/installation",
+            "/install",
+            "/quickstart",
+            "/troubleshooting",
+            "/runbook",
+        )
+    ):
+        return "runbook", True
+
+    min_confidence = MACRO_CLASSIFICATION_MIN_CONFIDENCE_BY_TYPE.get(predicted_type, 0.68)
+    if confidence >= min_confidence:
+        return predicted_type, True
+
+    existing_type = item.memory_type or payload.memory_type or "context"
+    return existing_type, False
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

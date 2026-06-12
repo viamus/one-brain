@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any, Protocol
@@ -9,7 +10,7 @@ from onebrain_core.application.memory_hardening import (
     ALLOWED_TEXT_EXTENSIONS,
     DEFAULT_EXCLUDE_DIRS,
     chunk_text,
-    classify_file_memory,
+    classify_file_memory_result,
     harden_memory_payload,
     parse_frontmatter,
 )
@@ -77,8 +78,8 @@ def analyze_memory_files(request: IngestionAnalyzeRequest) -> IngestionPlan:
 
         relative = _relative_path(file_path, root)
         parsed = parse_frontmatter(text)
-        title = _title_for_file(relative, parsed.metadata)
-        summary = _summary_for_text(parsed.metadata.get("description") or parsed.body)
+        title = _title_for_file(relative, parsed.metadata, parsed.body)
+        summary = _summary_for_file(relative, parsed.metadata, parsed.body)
         source_ref = _source_ref_for_file(relative, request.source_ref_prefix)
         document_id = _stable_id("document", source_ref)
         sections = _sections_for_file(
@@ -265,7 +266,14 @@ def _section_item(
     source_ref = f"{document.source_ref}#section-{order_index}"
     section_title = section["title"]
     summary = _summary_for_text(section["body"])
-    memory_type = classify_file_memory(document.relative_path, {}, file_extension)
+    classification = classify_file_memory_result(
+        document.relative_path,
+        {},
+        file_extension,
+        title=section_title,
+        content=section["body"],
+    )
+    memory_type = classification.memory_type
     content = (
         f"# {section_title}\n\n"
         f"Summary: {summary}\n\n"
@@ -289,6 +297,7 @@ def _section_item(
             "order_index": order_index,
             "section_title": section_title,
             "summary": summary,
+            "memory_classification": classification.as_metadata(),
         },
     )
     return IngestionItem(
@@ -405,11 +414,99 @@ def _source_ref_for_file(relative_path: str, prefix: str | None) -> str:
     return f"{prefix.rstrip('/')}/{normalized}" if prefix else f"file://{normalized}"
 
 
-def _title_for_file(relative_path: str, metadata: dict[str, str]) -> str:
+def _title_for_file(relative_path: str, metadata: dict[str, str], body: str) -> str:
     if metadata.get("name"):
-        return metadata["name"]
-    stem = Path(relative_path).stem
-    return re.sub(r"[_-]+", " ", stem).strip().title() or Path(relative_path).name
+        return _shorten_text(metadata["name"], 240)
+    if metadata.get("title"):
+        return _shorten_text(metadata["title"], 240)
+    source_title = _title_from_source_body(relative_path, body)
+    if source_title:
+        return _shorten_text(source_title, 240)
+    return _shorten_text(_title_from_relative_path(relative_path), 240)
+
+
+def _summary_for_file(relative_path: str, metadata: dict[str, str], body: str) -> str:
+    if description := metadata.get("description"):
+        return _summary_for_text(description)
+    if description := _description_from_source_body(relative_path, body):
+        return _summary_for_text(description)
+    return _summary_for_text(body)
+
+
+def _title_from_source_body(relative_path: str, body: str) -> str | None:
+    path = relative_path.replace("\\", "/").lower()
+    if path.endswith(".json"):
+        parsed = _json_object(body)
+        if parsed:
+            for key in ("displayName", "name", "title", "id"):
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    match = re.search(r"(?m)^#{1,2}\s+(.+?)\s*$", body)
+    if match:
+        title = match.group(1).strip()
+        if title and normalize_name(title) not in {"body", "manifest", "document"}:
+            return title
+    return None
+
+
+def _description_from_source_body(relative_path: str, body: str) -> str | None:
+    if not relative_path.replace("\\", "/").lower().endswith(".json"):
+        return None
+    parsed = _json_object(body)
+    if not parsed:
+        return None
+    value = parsed.get("description")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _json_object(body: str) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _title_from_relative_path(relative_path: str) -> str:
+    normalized = relative_path.replace("\\", "/").strip("/")
+    path = Path(normalized)
+    name = path.name.lower()
+    if name in {"body.md", "manifest.json", "workflow.json", "library.json", "readme.md"}:
+        candidate = path.parent.name or path.stem
+    else:
+        candidate = path.stem
+    return _humanize_slug(candidate) or path.name
+
+
+def _humanize_slug(value: str) -> str:
+    cleaned = re.sub(r"^(feedback|reference|project|memory|skill)_", "", value)
+    tokens = [token for token in re.split(r"[\s_.-]+", cleaned) if token]
+    acronyms = {
+        "acl",
+        "ado",
+        "api",
+        "ci",
+        "e2e",
+        "gdpr",
+        "http",
+        "lgpd",
+        "mcp",
+        "rpa",
+        "sso",
+        "tms",
+    }
+    return " ".join(
+        token.upper() if token.lower() in acronyms else token.capitalize()
+        for token in tokens
+    )
+
+
+def _shorten_text(value: str, max_length: int) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip()
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 3].rstrip() + "..."
 
 
 def _summary_for_text(text: str) -> str:

@@ -73,11 +73,13 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
     ports:
       - "127.0.0.1:${ONEBRAIN_API_PORT:-8088}:8000"
     volumes:
-      - C:/DoxieOS:/mnt/doxie:ro
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-api"]
     restart: unless-stopped
     healthcheck:
@@ -113,10 +115,12 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
     ports:
       - "127.0.0.1:${ONEBRAIN_WEB_PORT:-8089}:8000"
     volumes:
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-web"]
     restart: unless-stopped
     healthcheck:
@@ -142,12 +146,14 @@ services:
       DJANGO_SETTINGS_MODULE: onebrain_host.settings
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
-      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
+      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS\\github-private-catalog=/mnt/github-private-catalog"
       ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
     ports:
       - "127.0.0.1:${ONEBRAIN_MCP_PORT:-8090}:8000"
     volumes:
-      - C:/DoxieOS:/mnt/doxie:ro
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-mcp-http"]
     restart: unless-stopped
     healthcheck:
@@ -179,12 +185,24 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
     volumes:
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-jobs", "run_scheduled_jobs", "--job", "graph-aggregation"]
     restart: unless-stopped
 
 volumes:
   postgres_data:
+    name: ${ONEBRAIN_POSTGRES_VOLUME:-onebrain_postgres_data}
+    external: true
   qdrant_storage:
+    name: ${ONEBRAIN_QDRANT_VOLUME:-onebrain_qdrant_storage}
+    external: true
   onebrain_job_status:
+    name: ${ONEBRAIN_JOB_STATUS_VOLUME:-onebrain_job_status}
+    external: true
+  onebrain_ml_artifacts:
+    name: ${ONEBRAIN_ML_ARTIFACTS_VOLUME:-onebrain_ml_artifacts}
+    external: true

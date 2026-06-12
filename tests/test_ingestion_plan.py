@@ -91,6 +91,24 @@ def test_analyze_json_yaml_and_text_with_simple_parsers(tmp_path) -> None:
     assert any("yaml_parser_limited" in warning for warning in plan.warnings)
 
 
+def test_analyze_markdown_child_uses_ml_memory_classification(tmp_path) -> None:
+    source = tmp_path / "architecture-choice.md"
+    source.write_text(
+        "# Storage\n\n"
+        "Decision: we accepted PostgreSQL as the canonical memory store. "
+        "Consequences include migrations and backup ownership.\n",
+        encoding="utf-8",
+    )
+
+    plan = analyze(source)
+    child = next(item for item in plan.items if item.item_type == "child")
+
+    assert child.payload["memory_type"] == "decision"
+    classification = child.payload["metadata"]["memory_classification"]
+    assert classification["method"] == "ml"
+    assert classification["memory_type"] == "decision"
+
+
 def test_analyze_invalid_json_warns_and_falls_back_to_text_section(tmp_path) -> None:
     source = tmp_path / "broken.json"
     source.write_text('{"open": true', encoding="utf-8")

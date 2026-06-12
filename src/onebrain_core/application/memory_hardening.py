@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from onebrain_core.contracts.schemas import MemoryCreate
+from onebrain_ml.memory_classification import (
+    MemoryClassificationInput,
+    MemoryClassificationResult,
+    classify_memory_type,
+)
 
 ALLOWED_TEXT_EXTENSIONS = {
     "",
@@ -66,6 +71,7 @@ class FileMemoryCandidate:
     byte_length: int
     findings: list[str] = field(default_factory=list)
     redactions: int = 0
+    classification: dict[str, object] = field(default_factory=dict)
 
 
 def harden_memory_payload(
@@ -167,7 +173,14 @@ def build_file_memory_candidates(
         parsed = parse_frontmatter(text)
         title = _title_for_file(relative, parsed.metadata)
         ext = file_path.suffix.lower()
-        memory_type = classify_file_memory(relative, parsed.metadata, ext)
+        classification = classify_file_memory_result(
+            relative,
+            parsed.metadata,
+            ext,
+            title=title,
+            content=parsed.body,
+        )
+        memory_type = classification.memory_type
         base_source_ref = _source_ref_for_file(relative, source_ref_prefix)
         chunks = chunk_text(parsed.body.strip(), max_content_chars)
 
@@ -198,6 +211,7 @@ def build_file_memory_candidates(
                     "frontmatter_type": parsed.metadata.get("type"),
                     "chunk_index": index,
                     "chunk_count": len(chunks),
+                    "memory_classification": classification.as_metadata(),
                 },
             }
             hardened = harden_memory_payload(
@@ -214,8 +228,12 @@ def build_file_memory_candidates(
                     relative_path=relative,
                     memory_type=memory_type,
                     byte_length=file_path.stat().st_size,
-                    findings=hardened.findings,
+                    findings=[
+                        *hardened.findings,
+                        f"memory_type_classified:{classification.method}",
+                    ],
                     redactions=hardened.redactions,
+                    classification=classification.as_metadata(),
                 )
             )
     return candidates
@@ -250,29 +268,54 @@ def redact_secret_text(text: str) -> tuple[str, int]:
     return output, redactions
 
 
-def classify_file_memory(relative_path: str, metadata: dict[str, str], extension: str) -> str:
+def classify_file_memory(
+    relative_path: str,
+    metadata: dict[str, str],
+    extension: str,
+    *,
+    title: str | None = None,
+    content: str = "",
+) -> str:
+    return classify_file_memory_result(
+        relative_path,
+        metadata,
+        extension,
+        title=title,
+        content=content,
+    ).memory_type
+
+
+def classify_file_memory_result(
+    relative_path: str,
+    metadata: dict[str, str],
+    extension: str,
+    *,
+    title: str | None = None,
+    content: str = "",
+) -> MemoryClassificationResult:
     declared = metadata.get("type", "").lower()
     path = relative_path.lower().replace("/", "\\")
     if declared in {"skill", "skill.spec"} or re.search(r"(^|\\)skills?\\|\\skill\.md$", path):
-        return "skill"
+        return _heuristic_classification("skill", "frontmatter_or_skill_path")
     if declared == "decision" or re.search(r"decisions?\.ya?ml$|adr", path):
-        return "decision"
+        return _heuristic_classification("decision", "frontmatter_or_decision_path")
     if declared == "workflow" or re.search(r"\\(playbooks|checklists|spec-templates)\\", path):
-        return "workflow"
+        return _heuristic_classification("workflow", "frontmatter_or_workflow_path")
     if declared == "feedback":
-        return "rule"
+        return _heuristic_classification("rule", "frontmatter_feedback")
     if declared == "preference":
-        return "preference"
+        return _heuristic_classification("preference", "frontmatter_preference")
     if declared == "pitfall" or re.search(r"anti-pattern|antipattern|pitfall|avoid|no_", path):
-        return "pitfall"
+        return _heuristic_classification("pitfall", "frontmatter_or_pitfall_path")
     if declared == "reference":
-        return "fact"
+        return _heuristic_classification("fact", "frontmatter_reference")
     if re.search(r"(^|\\)project_|context|overview|portfolio|snapshot|library\.json$", path):
-        return "context"
+        return _heuristic_classification("context", "context_path")
     if extension in {
         ".config",
         ".cs",
         ".css",
+        ".json",
         ".js",
         ".mjs",
         ".npmrc",
@@ -281,9 +324,41 @@ def classify_file_memory(relative_path: str, metadata: dict[str, str], extension
         ".robot",
         ".ts",
         ".tsx",
+        ".yaml",
+        ".yml",
     }:
-        return "fact"
-    return "note"
+        return _heuristic_classification("fact", "code_or_config_extension")
+
+    result = classify_memory_type(
+        MemoryClassificationInput(
+            relative_path=relative_path,
+            metadata=metadata,
+            extension=extension,
+            title=title,
+            content=content,
+        )
+    )
+    if result.memory_type != "note" and result.confidence >= 0.36:
+        return result
+    return MemoryClassificationResult(
+        memory_type="note",
+        confidence=max(result.confidence, 0.2),
+        method="heuristic",
+        reasons=["default_note", *result.reasons[:3]],
+        runner_up=result.memory_type if result.memory_type != "note" else result.runner_up,
+        runner_up_confidence=(
+            result.confidence if result.memory_type != "note" else result.runner_up_confidence
+        ),
+    )
+
+
+def _heuristic_classification(memory_type: str, reason: str) -> MemoryClassificationResult:
+    return MemoryClassificationResult(
+        memory_type=memory_type,
+        confidence=1.0,
+        method="heuristic",
+        reasons=[reason],
+    )
 
 
 def chunk_text(text: str, max_chars: int) -> list[str]:
