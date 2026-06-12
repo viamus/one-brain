@@ -8,15 +8,15 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "OneBrain",
-    "shortDescription": "Harvest enterprise knowledge into OneBrain.",
-    "longDescription": "OneBrain adds skills and tooling for scanning repositories, wikis, Jira, and Azure DevOps into structured knowledge packs that can be ingested by OneBrain.",
+    "shortDescription": "Harvest enterprise knowledge into OneBrain with subagent fan-out.",
+    "longDescription": "OneBrain adds skills and tooling for orchestrating subagents across repositories, wikis, Jira, and Azure DevOps into structured knowledge packs that can be ingested by OneBrain.",
     "developerName": "OneBrain",
     "category": "Productivity",
-    "capabilities": ["Knowledge ingestion", "Repository analysis", "Enterprise discovery"],
+    "capabilities": ["Knowledge ingestion", "Repository analysis", "Enterprise discovery", "Subagent orchestration"],
     "defaultPrompt": [
-      "Harvest this repository into a OneBrain knowledge pack.",
-      "Scan Azure DevOps and Jira into OneBrain.",
-      "Create repository metadata for OneBrain ingestion."
+      "Harvest this repository into a OneBrain knowledge pack using subagents.",
+      "Scan Azure DevOps and Jira into OneBrain with subagent fan-out.",
+      "Create repository metadata for OneBrain ingestion using parallel collection slices."
     ]
   }
 }

@@ -13,6 +13,8 @@ Use this skill to create a durable knowledge pack before ingesting anything into
 - `documents/`: generated Markdown documentation for repositories, wikis, work tracking, active people, and business-flow hypotheses.
 - `onebrain-import.jsonl`: one MemoryCreate-compatible JSON object per line.
 
+Read `references/subagent-orchestration.md` before running any multi-source, multi-project, multi-repository, Azure DevOps, GitHub, Jira, wiki, or broad local-repository harvest. Optimize broad queries through subagents whenever subagents are available. Keep the main agent responsible for planning, final merge, validation, and ingestion.
+
 Prefer the bundled script:
 
 ```powershell
@@ -56,6 +58,12 @@ For MCP-first Azure DevOps runs, export the MCP results to JSON using the shape 
 ```
 
 Use `references/provider-endpoints.md` when changing provider coverage. It records the official APIs this skill is based on.
+
+## Query Orchestration
+
+Default to subagent fan-out for slow or broad discovery. Partition work by provider, then by organization/project/repository/wiki/work-item family. Each subagent writes a bounded JSON or Markdown artifact under the run output folder; the main agent merges artifacts through the bundled script or the same knowledge pack contract.
+
+Keep one source of truth for final output. Subagents collect and normalize evidence, but the main agent owns deduplication, `manifest.json`, `onebrain-import.jsonl`, validation, and any OneBrain ingestion.
 
 ## Harvest Policy
 
