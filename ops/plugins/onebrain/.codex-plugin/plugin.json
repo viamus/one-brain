@@ -1,0 +1,22 @@
+{
+  "name": "onebrain",
+  "version": "0.1.0",
+  "description": "Knowledge harvesting and ingestion workflows for OneBrain.",
+  "author": {
+    "name": "OneBrain"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OneBrain",
+    "shortDescription": "Harvest enterprise knowledge into OneBrain.",
+    "longDescription": "OneBrain adds skills and tooling for scanning repositories, wikis, Jira, and Azure DevOps into structured knowledge packs that can be ingested by OneBrain.",
+    "developerName": "OneBrain",
+    "category": "Productivity",
+    "capabilities": ["Knowledge ingestion", "Repository analysis", "Enterprise discovery"],
+    "defaultPrompt": [
+      "Harvest this repository into a OneBrain knowledge pack.",
+      "Scan Azure DevOps and Jira into OneBrain.",
+      "Create repository metadata for OneBrain ingestion."
+    ]
+  }
+}
