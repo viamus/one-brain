@@ -1,8 +1,8 @@
 interface:
   display_name: "OneBrain Knowledge Harvest"
-  short_description: "Harvest enterprise knowledge into OneBrain with subagent fan-out."
+  short_description: "Harvest enterprise knowledge into OneBrain with parallel agents."
   brand_color: "#C6501B"
-  default_prompt: "Use $onebrain-knowledge-harvest with subagent orchestration to harvest this repository into a OneBrain knowledge pack."
+  default_prompt: "Use $onebrain-knowledge-harvest and explicit parallel agents/subagents to harvest this repository into a OneBrain knowledge pack."
 
 dependencies:
   tools:

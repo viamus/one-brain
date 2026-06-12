@@ -1,6 +1,17 @@
 # Subagent Query Orchestration
 
-Use subagents to reduce harvest time whenever the request spans more than one source, project, repository, wiki, or work-tracking query. The main agent stays as the orchestrator and final pack owner.
+Use parallel agents/subagents to reduce harvest time whenever the request spans more than one source, project, repository, wiki, or work-tracking query. The main agent stays as the orchestrator and final pack owner.
+
+## Authorization Rule
+
+Some Codex surfaces only permit spawning subagents when the active user request explicitly asks for `parallel agents` or `subagents`. Skill instructions alone may not count as that explicit authorization.
+
+If subagents are needed and the environment reports that explicit authorization is required:
+
+1. Do not continue with a local-only harvest by default.
+2. Ask: `Posso usar parallel agents/subagents para dividir esse harvest?`
+3. Continue with subagent fan-out after approval.
+4. Continue local-only only when the user denies, subagent tools are absent, or the user explicitly requests local-only execution.
 
 ## Default Strategy
 
@@ -10,7 +21,7 @@ Use subagents to reduce harvest time whenever the request spans more than one so
    - GitHub: owner/repository/wiki slices.
    - Jira: project or JQL window slices.
    - Local repositories: repository or directory-family slices.
-3. Launch subagents for independent read-only collection slices when available.
+3. Launch subagents for independent read-only collection slices when available and authorized.
 4. Require every subagent to write a bounded artifact to the run output folder.
 5. Merge artifacts in the main agent and run the bundled script or equivalent pack writer once.
 

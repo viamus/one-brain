@@ -1,6 +1,6 @@
 ---
 name: onebrain-knowledge-harvest
-description: Harvest enterprise knowledge from GitHub repositories, GitHub wikis, Azure DevOps repos/wikis/work items/pull requests, Jira projects/issues, and local repositories into OneBrain-ready documentation, metadata manifests, and ingestion payloads. Use when asked to scan repos, clone repos, build a super repository of documentation, extract business flows, map active people, generate missing docs from source evidence, or ingest generated knowledge into OneBrain.
+description: Harvest enterprise knowledge from GitHub repositories, GitHub wikis, Azure DevOps repos/wikis/work items/pull requests, Jira projects/issues, and local repositories into OneBrain-ready documentation, metadata manifests, and ingestion payloads, optimized with parallel agents/subagents when authorized. Use when asked to scan repos, clone repos, build a super repository of documentation, extract business flows, map active people, generate missing docs from source evidence, orchestrate parallel agents, or ingest generated knowledge into OneBrain.
 ---
 
 # OneBrain Knowledge Harvest
@@ -13,7 +13,7 @@ Use this skill to create a durable knowledge pack before ingesting anything into
 - `documents/`: generated Markdown documentation for repositories, wikis, work tracking, active people, and business-flow hypotheses.
 - `onebrain-import.jsonl`: one MemoryCreate-compatible JSON object per line.
 
-Read `references/subagent-orchestration.md` before running any multi-source, multi-project, multi-repository, Azure DevOps, GitHub, Jira, wiki, or broad local-repository harvest. Optimize broad queries through subagents whenever subagents are available. Keep the main agent responsible for planning, final merge, validation, and ingestion.
+Read `references/subagent-orchestration.md` before running any multi-source, multi-project, multi-repository, Azure DevOps, GitHub, Jira, wiki, or broad local-repository harvest. Optimize broad queries through parallel agents/subagents whenever subagents are available and explicitly authorized by the user or environment. Keep the main agent responsible for planning, final merge, validation, and ingestion.
 
 Prefer the bundled script:
 
@@ -62,6 +62,8 @@ Use `references/provider-endpoints.md` when changing provider coverage. It recor
 ## Query Orchestration
 
 Default to subagent fan-out for slow or broad discovery. Partition work by provider, then by organization/project/repository/wiki/work-item family. Each subagent writes a bounded JSON or Markdown artifact under the run output folder; the main agent merges artifacts through the bundled script or the same knowledge pack contract.
+
+Some Codex environments expose subagent tools only when the user explicitly asks for `parallel agents` or `subagents` in the active request. If a broad harvest needs subagents but the environment says explicit authorization is required, pause and ask the user to approve parallel agents instead of silently falling back to local-only harvest. Continue local-only only when subagent tools are unavailable, the user denies parallel agents, or the user explicitly asks for local-only execution.
 
 Keep one source of truth for final output. Subagents collect and normalize evidence, but the main agent owns deduplication, `manifest.json`, `onebrain-import.jsonl`, validation, and any OneBrain ingestion.
 
