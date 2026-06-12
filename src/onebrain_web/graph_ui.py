@@ -31,7 +31,9 @@ GRAPH_UI_HTML = """<!doctype html>
       --context: var(--ob-blue);
       --skill: #b99df1;
       --workflow: var(--ob-tigerlily);
-      --entity: var(--ob-blue);
+      --rule: var(--ob-yellow);
+      --runbook: #d6a64f;
+      --entity: #69b7c6;
       --fact: #82b8c9;
       --note: #a9a39a;
       --edge: #6f7569;
@@ -344,15 +346,16 @@ GRAPH_UI_HTML = """<!doctype html>
     .legend {
       position: absolute;
       z-index: 3;
-      top: 12px;
+      bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
       align-items: center;
       gap: 12px;
-      width: fit-content;
+      width: max-content;
       max-width: calc(100% - 48px);
-      padding: 8px 10px;
+      min-height: 34px;
+      padding: 6px 10px;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       border-radius: var(--ob-radius-panel);
       background: var(--panel-float);
@@ -372,11 +375,15 @@ GRAPH_UI_HTML = """<!doctype html>
     .legend-grid {
       flex: 1 1 auto;
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 7px 14px;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
     }
 
     .legend-item {
+      flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -433,8 +440,9 @@ GRAPH_UI_HTML = """<!doctype html>
       }
 
       .legend {
-        align-items: flex-start;
-        flex-direction: column;
+        align-items: center;
+        flex-direction: row;
+        bottom: 12px;
         left: 12px;
         transform: none;
         width: calc(100% - 24px);
@@ -519,6 +527,12 @@ GRAPH_UI_HTML = """<!doctype html>
             <span class="legend-item"><span class="dot" style="background: var(--memory)"></span>Memory</span>
             <span class="legend-item"><span class="dot" style="background: var(--context)"></span>Context</span>
             <span class="legend-item"><span class="dot" style="background: var(--skill)"></span>Skill</span>
+            <span class="legend-item"><span class="dot" style="background: var(--workflow)"></span>Workflow</span>
+            <span class="legend-item"><span class="dot" style="background: var(--rule)"></span>Rule</span>
+            <span class="legend-item"><span class="dot" style="background: var(--runbook)"></span>Runbook</span>
+            <span class="legend-item"><span class="dot" style="background: var(--fact)"></span>Fact</span>
+            <span class="legend-item"><span class="dot" style="background: var(--note)"></span>Note</span>
+            <span class="legend-item"><span class="dot" style="background: var(--entity)"></span>Entity</span>
             <span class="legend-item"><span class="ring-sample"></span>Centroid candidate</span>
             <span class="legend-item"><span class="ring-sample grouping"></span>Grouping opportunity</span>
           </div>
@@ -564,10 +578,12 @@ GRAPH_UI_HTML = """<!doctype html>
       skill: "--skill",
       workflow: "--workflow",
       entity: "--entity",
-      rule: "--memory",
+      rule: "--rule",
       decision: "--workflow",
       context: "--context",
       note: "--note",
+      runbook: "--runbook",
+      pitfall: "--rule",
       fact: "--fact",
       group: "--grouping",
       grouping: "--grouping"
@@ -582,6 +598,8 @@ GRAPH_UI_HTML = """<!doctype html>
       "--memory",
       "--skill",
       "--workflow",
+      "--rule",
+      "--runbook",
       "--entity",
       "--context",
       "--note",

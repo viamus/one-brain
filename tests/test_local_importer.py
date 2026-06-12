@@ -147,6 +147,42 @@ class FakeBatchContextualizer:
         }
 
 
+class FakeSkillContextualizer:
+    name = "heuristic"
+    batch_size = 10
+
+    async def contextualize_batch(
+        self,
+        *,
+        root_path: Path,
+        requests: list[KnowledgeContextRequest],
+        redact_secrets: bool,
+    ) -> dict[str, KnowledgeContext]:
+        assert root_path
+        assert redact_secrets is True
+        return {
+            request.document.id: KnowledgeContext(
+                title="Angular developer skill",
+                summary="Guides agents through Angular components, routing, testing, and services.",
+                purpose="Help agents generate Angular code using official framework patterns.",
+                domain="frontend engineering",
+                category="agent skill",
+                key_topics=["Angular", "Components", "Routing", "Testing"],
+                important_sections=["When to use", "References"],
+                entities=[
+                    KnowledgeEntityContext(
+                        name="Angular",
+                        entity_type="framework",
+                        summary="Frontend framework taught by this skill.",
+                    )
+                ],
+                tags=["angular", "agent-skill"],
+                confidence=0.9,
+            )
+            for request in requests
+        }
+
+
 class SlowParallelBatchContextualizer(FakeBatchContextualizer):
     batch_size = 1
     max_workers = 2
@@ -269,6 +305,55 @@ async def test_local_import_omits_evidence_items_by_default(tmp_path) -> None:
     assert {item.item_type for item in result.plan.items} == {"document"}
     assert result.plan.stats["evidence_items_included"] is False
     assert result.plan.stats["omitted_evidence_items"] > 0
+
+
+@pytest.mark.asyncio
+async def test_local_import_classifies_enriched_macro_memory_type(tmp_path) -> None:
+    source = tmp_path / "skills" / "angular-developer" / "SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "# Angular Developer\n\nUse this skill for Angular components and routing.\n\n"
+        "## References\n\nTesting and service guidance.",
+        encoding="utf-8",
+    )
+
+    result = await run_local_import(
+        LocalImportOptions(path=tmp_path),
+        api_client=FakeApiClient(tmp_path),
+        contextualizer=FakeSkillContextualizer(),
+    )
+
+    macro = next(item for item in result.plan.items if item.item_type == "document")
+
+    assert macro.memory_type == "skill"
+    assert macro.payload.memory_type == "skill"
+    assert "memory-type:skill" in macro.payload.tags
+    assert macro.payload.metadata["memory_classification"]["memory_type"] == "skill"
+    assert "memory_type_classified_as_skill" in macro.findings
+
+
+@pytest.mark.asyncio
+async def test_local_import_treats_skill_references_as_facts(tmp_path) -> None:
+    source = tmp_path / "skills" / "seo" / "references" / "rate-limits.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "# Rate Limits\n\nUse this reference for API quotas and retry timing.\n\n"
+        "## Limits\n\nRespect provider rate limits.",
+        encoding="utf-8",
+    )
+
+    result = await run_local_import(
+        LocalImportOptions(path=tmp_path),
+        api_client=FakeApiClient(tmp_path),
+        contextualizer=FakeSkillContextualizer(),
+    )
+
+    macro = next(item for item in result.plan.items if item.item_type == "document")
+
+    assert macro.memory_type == "fact"
+    assert macro.payload.memory_type == "fact"
+    assert "memory-type:fact" in macro.payload.tags
+    assert macro.payload.metadata["memory_classification"]["selected_memory_type"] == "fact"
 
 
 @pytest.mark.asyncio

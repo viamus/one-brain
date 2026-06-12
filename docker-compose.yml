@@ -61,7 +61,7 @@ services:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
       ONEBRAIN_QDRANT_URL: http://qdrant:6333
       DJANGO_SETTINGS_MODULE: onebrain_host.settings
-      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-api,0.0.0.0
+      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-api,0.0.0.0,${ONEBRAIN_API_HOST:-api.onebrain.localhost},${ONEBRAIN_WEB_HOST:-onebrain.localhost},api.127.0.0.1.sslip.io,onebrain.127.0.0.1.sslip.io
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
@@ -73,12 +73,24 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
-    ports:
-      - "127.0.0.1:${ONEBRAIN_API_PORT:-8088}:8000"
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
+    expose:
+      - "8000"
     volumes:
-      - C:/DoxieOS:/mnt/doxie:ro
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-api"]
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${ONEBRAIN_PROXY_NETWORK:-local_proxy}"
+      - "traefik.http.routers.onebrain-api.entrypoints=web"
+      - "traefik.http.routers.onebrain-api.rule=Host(`${ONEBRAIN_API_HOST:-api.onebrain.localhost}`) || Host(`api.127.0.0.1.sslip.io`) || (Host(`${ONEBRAIN_WEB_HOST:-onebrain.localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/v1`))) || (Host(`onebrain.127.0.0.1.sslip.io`) && (PathPrefix(`/api`) || PathPrefix(`/v1`)))"
+      - "traefik.http.routers.onebrain-api.priority=100"
+      - "traefik.http.services.onebrain-api.loadbalancer.server.port=8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
@@ -101,7 +113,7 @@ services:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
       ONEBRAIN_QDRANT_URL: http://qdrant:6333
       DJANGO_SETTINGS_MODULE: onebrain_host.settings
-      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-web,0.0.0.0
+      ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-web,0.0.0.0,${ONEBRAIN_WEB_HOST:-onebrain.localhost},onebrain.127.0.0.1.sslip.io
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
@@ -113,11 +125,23 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
-    ports:
-      - "127.0.0.1:${ONEBRAIN_WEB_PORT:-8089}:8000"
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
+    expose:
+      - "8000"
     volumes:
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-web"]
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${ONEBRAIN_PROXY_NETWORK:-local_proxy}"
+      - "traefik.http.routers.onebrain-web.entrypoints=web"
+      - "traefik.http.routers.onebrain-web.rule=Host(`${ONEBRAIN_WEB_HOST:-onebrain.localhost}`) || Host(`onebrain.127.0.0.1.sslip.io`)"
+      - "traefik.http.routers.onebrain-web.priority=1"
+      - "traefik.http.services.onebrain-web.loadbalancer.server.port=8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
@@ -142,13 +166,25 @@ services:
       DJANGO_SETTINGS_MODULE: onebrain_host.settings
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
-      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS=/mnt/doxie"
+      ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS\\github-private-catalog=/mnt/github-private-catalog"
       ONEBRAIN_MCP_REQUIRE_API_KEY: "true"
-    ports:
-      - "127.0.0.1:${ONEBRAIN_MCP_PORT:-8090}:8000"
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
+    expose:
+      - "8000"
     volumes:
-      - C:/DoxieOS:/mnt/doxie:ro
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-mcp-http"]
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${ONEBRAIN_PROXY_NETWORK:-local_proxy}"
+      - "traefik.http.routers.onebrain-mcp.entrypoints=web"
+      - "traefik.http.routers.onebrain-mcp.rule=Host(`${ONEBRAIN_MCP_HOST:-mcp.onebrain.localhost}`) || Host(`mcp.127.0.0.1.sslip.io`) || (Host(`${ONEBRAIN_WEB_HOST:-onebrain.localhost}`) && PathPrefix(`/mcp`)) || (Host(`onebrain.127.0.0.1.sslip.io`) && PathPrefix(`/mcp`))"
+      - "traefik.http.routers.onebrain-mcp.priority=200"
+      - "traefik.http.services.onebrain-mcp.loadbalancer.server.port=8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
@@ -179,12 +215,30 @@ services:
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT:-25}
       ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE: ${ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE:-3}
       ONEBRAIN_JOB_STATUS_PATH: /var/lib/onebrain/jobs/status.json
+      ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH: /var/lib/onebrain/ml/memory-classifier.json
     volumes:
+      - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
+      - onebrain_ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-jobs", "run_scheduled_jobs", "--job", "graph-aggregation"]
     restart: unless-stopped
 
 volumes:
   postgres_data:
+    name: ${ONEBRAIN_POSTGRES_VOLUME:-onebrain_postgres_data}
+    external: true
   qdrant_storage:
+    name: ${ONEBRAIN_QDRANT_VOLUME:-onebrain_qdrant_storage}
+    external: true
   onebrain_job_status:
+    name: ${ONEBRAIN_JOB_STATUS_VOLUME:-onebrain_job_status}
+    external: true
+  onebrain_ml_artifacts:
+    name: ${ONEBRAIN_ML_ARTIFACTS_VOLUME:-onebrain_ml_artifacts}
+    external: true
+
+networks:
+  default:
+  proxy:
+    name: ${ONEBRAIN_PROXY_NETWORK:-local_proxy}
+    external: true

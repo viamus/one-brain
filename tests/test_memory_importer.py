@@ -71,6 +71,7 @@ def test_build_file_memory_candidates_uses_frontmatter_and_source_ref(tmp_path) 
     assert len(candidates) == 1
     candidate = candidates[0]
     assert candidate.memory_type == "rule"
+    assert candidate.classification["method"] == "heuristic"
     assert candidate.source_ref.endswith(
         "/robot-framework-browser-e2e/feedback_wait_for_request.md"
     )
@@ -81,6 +82,26 @@ def test_build_file_memory_candidates_uses_frontmatter_and_source_ref(tmp_path) 
     }
     assert "Summary: Browser returns a URL string." in candidate.payload["content"]
     assert "source-type:feedback" in candidate.payload["tags"]
+    assert candidate.payload["metadata"]["memory_classification"]["memory_type"] == "rule"
+
+
+def test_build_file_memory_candidates_uses_ml_for_ambiguous_markdown(tmp_path) -> None:
+    memory_file = tmp_path / "storage-choice.md"
+    memory_file.write_text(
+        "# Storage choice\n\n"
+        "Decision: we accepted PostgreSQL as the canonical memory store. "
+        "Consequences include migrations and backup ownership.\n",
+        encoding="utf-8",
+    )
+
+    candidates = build_file_memory_candidates(tmp_path)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.memory_type == "decision"
+    assert candidate.classification["method"] == "ml"
+    assert candidate.payload["metadata"]["memory_classification"]["memory_type"] == "decision"
+    assert "memory_type_classified:ml" in candidate.findings
 
 
 def test_build_file_memory_candidates_classifies_skill_files(tmp_path) -> None:

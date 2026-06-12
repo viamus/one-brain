@@ -70,6 +70,61 @@ def test_analyze_memory_files_uses_specific_title_for_body_fallback(tmp_path) ->
     assert child.payload.metadata["section_title"] == "Details: Plain"
 
 
+def test_analyze_memory_files_names_catalog_manifest_from_display_name(tmp_path) -> None:
+    source = tmp_path / "skills" / "agent-builder" / "manifest.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        (
+            '{"id":"agent-builder","displayName":"Agent Builder",'
+            '"description":"Interactive guide for authoring DoxieOS agents."}'
+        ),
+        encoding="utf-8",
+    )
+
+    plan = analyze_memory_files(IngestionAnalyzeRequest(path=str(tmp_path)))
+    macro = next(item for item in plan.items if item.item_type == "document")
+
+    assert macro.title == "Agent Builder"
+    assert macro.summary == "Interactive guide for authoring DoxieOS agents."
+    assert macro.payload.title == "Agent Builder"
+
+
+def test_analyze_memory_files_names_catalog_body_from_heading(tmp_path) -> None:
+    source = tmp_path / "skills" / "agent-builder" / "body.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "# Agent Builder Skill\n\nUse this skill to co-author DoxieOS agents.",
+        encoding="utf-8",
+    )
+
+    plan = analyze_memory_files(IngestionAnalyzeRequest(path=str(tmp_path)))
+    macro = next(item for item in plan.items if item.item_type == "document")
+
+    assert macro.title == "Agent Builder Skill"
+    assert macro.title != "Body"
+    assert macro.payload.title == "Agent Builder Skill"
+
+
+def test_analyze_memory_files_classifies_child_sections_with_ml(tmp_path) -> None:
+    source = tmp_path / "library" / "storage-choice.md"
+    source.parent.mkdir()
+    source.write_text(
+        "# Storage\n\n"
+        "Decision: we accepted PostgreSQL as the canonical memory store. "
+        "Consequences include migrations and backup ownership.\n",
+        encoding="utf-8",
+    )
+
+    plan = analyze_memory_files(IngestionAnalyzeRequest(path=str(tmp_path)))
+    child = next(item for item in plan.items if item.item_type == "section")
+
+    assert child.memory_type == "decision"
+    assert child.payload.memory_type == "decision"
+    classification = child.payload.metadata["memory_classification"]
+    assert classification["method"] == "ml"
+    assert classification["memory_type"] == "decision"
+
+
 @pytest.mark.asyncio
 async def test_commit_ingestion_plan_creates_parent_child_links(tmp_path) -> None:
     source = tmp_path / "guide.md"

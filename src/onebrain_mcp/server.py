@@ -4,6 +4,7 @@ import uuid
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from onebrain_core.application.memory_hardening import harden_memory_payload
 from onebrain_core.application.memory_importer import add_hardened_memory, import_memory_files
@@ -27,6 +28,33 @@ mcp = FastMCP(
         "deterministic context packs. Use capture only for stable, non-secret "
         "information. Use context before tasks that need prior rules, project context, "
         "decisions, workflows, skills, or pitfalls."
+    ),
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=[
+            "127.0.0.1",
+            "127.0.0.1:*",
+            "localhost",
+            "localhost:*",
+            "[::1]",
+            "[::1]:*",
+            "mcp.onebrain.localhost",
+            "mcp.onebrain.localhost:*",
+            "onebrain.localhost",
+            "onebrain.localhost:*",
+            "mcp.127.0.0.1.sslip.io",
+            "mcp.127.0.0.1.sslip.io:*",
+            "onebrain.127.0.0.1.sslip.io",
+            "onebrain.127.0.0.1.sslip.io:*",
+        ],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://[::1]:*",
+            "http://mcp.onebrain.localhost:*",
+            "http://onebrain.localhost:*",
+            "http://mcp.127.0.0.1.sslip.io:*",
+            "http://onebrain.127.0.0.1.sslip.io:*",
+        ],
     ),
 )
 

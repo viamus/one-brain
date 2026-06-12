@@ -53,6 +53,7 @@ onebrain-mcp-http = "onebrain_host.entrypoints:run_mcp_http"
 onebrain-jobs = "onebrain_host.entrypoints:run_jobs"
 onebrain-mcp = "onebrain_mcp.server:run_stdio"
 onebrain-local-import = "onebrain_cli.local_importer:main"
+onebrain-memory-classifier = "onebrain_ml.cli:main"
 
 [build-system]
 requires = ["hatchling"]

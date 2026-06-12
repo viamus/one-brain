@@ -457,6 +457,69 @@ def test_graph_grouping_opportunities_deduplicate_overlapping_seeds() -> None:
     assert len(opportunities) == 1
 
 
+def test_graph_grouping_opportunities_ignore_catalog_artifact_keywords() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    titles = [
+        "Frontend Product Engineer",
+        "MCP Integration Architect",
+        "SonarQube technical Debt Negotiator",
+    ]
+    nodes = {
+        f"memory:{index}": GraphNode(
+            id=f"memory:{index}",
+            node_type="memory",
+            label=title,
+        )
+        for index, title in enumerate(titles)
+    }
+    edges: dict[str, GraphEdge] = {}
+    for left, right in (("0", "1"), ("0", "2"), ("1", "2")):
+        edges[f"correlation:{left}:{right}"] = GraphEdge(
+            id=f"correlation:{left}:{right}",
+            source=f"memory:{left}",
+            target=f"memory:{right}",
+            edge_type="correlation",
+            label="shared_entity",
+            weight=0.8,
+            confidence=0.8,
+            metadata={
+                "reasons": ["shared_entity"],
+                "shared_entities": [
+                    "ambevtech",
+                    "body",
+                    "configura",
+                    "fonte",
+                    "padr",
+                    "topic",
+                    "architect",
+                    "debt",
+                ],
+                "score": 7.0,
+            },
+        )
+
+    opportunities = service._build_grouping_opportunities(
+        nodes,
+        edges,
+        limit=4,
+        min_size=3,
+    )
+
+    assert len(opportunities) == 1
+    assert "Body" not in opportunities[0].keywords
+    assert "Ambevtech" not in opportunities[0].keywords
+    assert "Configura" not in opportunities[0].keywords
+    assert "Fonte" not in opportunities[0].keywords
+    assert "Padr" not in opportunities[0].keywords
+    assert "Topic" not in opportunities[0].keywords
+    assert "Body" not in opportunities[0].label
+    assert "Ambevtech" not in opportunities[0].label
+    assert "Configura" not in opportunities[0].label
+    assert "Fonte" not in opportunities[0].label
+    assert "Padr" not in opportunities[0].label
+    assert "Topic" not in opportunities[0].label
+
+
 @pytest.mark.asyncio
 async def test_graph_aggregation_materializes_grouping_opportunity_memory() -> None:
     service = OneBrainService.__new__(OneBrainService)
@@ -648,6 +711,45 @@ def test_memory_graph_label_uses_source_ref_when_generic_metadata_is_missing() -
     )
 
     assert service._memory_label(memory) == "runtime.md"
+
+
+def test_memory_graph_label_humanizes_catalog_manifest_artifact() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="workflow",
+        title="Manifest",
+        content="Summary: Specialist for Azure DevOps build failure diagnostics.",
+        content_hash="a",
+        scope={"catalog": "private-engineering-catalog"},
+        tags=["ingestion:macro"],
+        confidence=0.8,
+        source_type="github-private-catalog",
+        source_ref=(
+            "catalog://github-private-catalog/skills/"
+            "ado-build-failure-diagnostician/manifest.json#document"
+        ),
+    )
+
+    assert service._memory_label(memory) == "ADO Build Failure Diagnostician"
+
+
+def test_memory_graph_label_humanizes_catalog_body_artifact() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    memory = Memory(
+        id=uuid.uuid4(),
+        memory_type="workflow",
+        title="Body",
+        content="Summary: Specialist for Azure DevOps build failure diagnostics.",
+        content_hash="a",
+        scope={"catalog": "private-engineering-catalog"},
+        tags=["ingestion:macro"],
+        confidence=0.8,
+        source_type="github-private-catalog",
+        metadata_={"relative_path": "skills/agent-builder/body.md"},
+    )
+
+    assert service._memory_label(memory) == "Agent Builder"
 
 
 @pytest.mark.asyncio
@@ -1033,18 +1135,24 @@ def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> No
     assert 'class="metric-icon nodes"' in html
     assert "#eef2f5" not in html
     assert 'class="legend legend-horizontal"' in html
+    assert "bottom: 12px;" in html
+    assert "top: 12px;" not in html
+    assert "flex-wrap: nowrap;" in html
     assert 'class="metrics top-metrics"' in html
     assert 'class="legend-title">Legend</span>' in html
     assert ">Memory</span>" in html
     assert ">Context</span>" in html
     assert ">Skill</span>" in html
+    assert ">Workflow</span>" in html
+    assert ">Rule</span>" in html
+    assert ">Runbook</span>" in html
+    assert ">Fact</span>" in html
+    assert ">Note</span>" in html
+    assert ">Entity</span>" in html
     assert "Centroid candidate" in html
     assert "Grouping opportunity" in html
     assert "Correlation edge" not in html
     assert "line-sample" not in html
-    assert ">Workflow</span>" not in html
-    assert ">Fact</span>" not in html
-    assert ">Note</span>" not in html
     assert 'id="spread"' in html
     assert "document.documentElement.dataset.theme" in html
     assert "centroid_candidate" in html
