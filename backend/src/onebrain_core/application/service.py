@@ -22,6 +22,7 @@ from onebrain_infra.models import (
 )
 from onebrain_infra.vector_store import MemoryVectorStore
 from sqlalchemy import Select, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -2086,25 +2087,35 @@ class OneBrainService:
 
     async def _upsert_entity(self, session: AsyncSession, entity_input: EntityInput) -> Entity:
         normalized = normalize_name(entity_input.name)
-        result = await session.execute(
-            select(Entity).where(
-                Entity.normalized_name == normalized,
-                Entity.entity_type == entity_input.entity_type,
-            )
+        name = entity_input.name.strip()
+
+        insert_statement = pg_insert(Entity).values(
+            {
+                Entity.name: name,
+                Entity.normalized_name: normalized,
+                Entity.entity_type: entity_input.entity_type,
+                Entity.summary: entity_input.summary,
+                Entity.metadata_: entity_input.metadata,
+            }
         )
-        entity = result.scalar_one_or_none()
+        insert_result = await session.execute(
+            insert_statement.on_conflict_do_update(
+                index_elements=[Entity.normalized_name, Entity.entity_type],
+                set_={
+                    Entity.name: name,
+                    Entity.summary: entity_input.summary,
+                    Entity.metadata_: entity_input.metadata,
+                },
+            ).returning(Entity.id)
+        )
+        entity_id = insert_result.scalar_one()
+        result = await session.execute(
+            select(Entity).where(Entity.id == entity_id).order_by(Entity.created_at.asc()).limit(1)
+        )
+        entity = result.scalars().first()
         if entity is not None:
             return entity
-        entity = Entity(
-            name=entity_input.name.strip(),
-            normalized_name=normalized,
-            entity_type=entity_input.entity_type,
-            summary=entity_input.summary,
-            metadata_=entity_input.metadata,
-        )
-        session.add(entity)
-        await session.flush()
-        return entity
+        raise RuntimeError(f"Entity upsert returned missing id: {entity_id}")
 
     def _entities_from_scope(self, scope: dict[str, Any]) -> list[EntityInput]:
         entity_inputs: list[EntityInput] = []

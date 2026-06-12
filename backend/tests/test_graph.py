@@ -8,6 +8,7 @@ import pytest
 from onebrain_core.application.service import OneBrainService
 from onebrain_core.contracts.schemas import (
     ContextRequest,
+    EntityInput,
     GraphAggregationRequest,
     GraphEdge,
     GraphGroupingOpportunity,
@@ -19,6 +20,60 @@ from onebrain_core.contracts.schemas import (
     SearchRequest,
 )
 from onebrain_infra.models import Entity, Memory
+
+
+class FakeEntityScalarResult:
+    def __init__(self, entity: Entity | None) -> None:
+        self._entity = entity
+
+    def first(self) -> Entity | None:
+        return self._entity
+
+
+class FakeEntityExecuteResult:
+    def __init__(
+        self,
+        *,
+        entity: Entity | None = None,
+        inserted_id: uuid.UUID | None = None,
+        fail_scalar_lookup: bool = False,
+    ) -> None:
+        self._entity = entity
+        self._inserted_id = inserted_id
+        self._fail_scalar_lookup = fail_scalar_lookup
+
+    def scalars(self) -> FakeEntityScalarResult:
+        return FakeEntityScalarResult(self._entity)
+
+    def scalar_one(self) -> uuid.UUID:
+        if self._inserted_id is None:
+            raise AssertionError("expected returned entity id")
+        return self._inserted_id
+
+    def scalar_one_or_none(self) -> uuid.UUID | None:
+        if self._fail_scalar_lookup:
+            raise AssertionError(
+                "entity lookup must tolerate duplicate rows with scalars().first()"
+            )
+        return self._inserted_id
+
+
+class FakeEntitySession:
+    def __init__(self, *results: FakeEntityExecuteResult) -> None:
+        self._results = list(results)
+        self.added: list[Entity] = []
+        self.flushed = False
+
+    async def execute(self, _statement: object) -> FakeEntityExecuteResult:
+        if not self._results:
+            raise AssertionError("unexpected entity query")
+        return self._results.pop(0)
+
+    def add(self, entity: Entity) -> None:
+        self.added.append(entity)
+
+    async def flush(self) -> None:
+        self.flushed = True
 
 
 def test_graph_request_normalizes_blank_query() -> None:
@@ -46,6 +101,58 @@ def memory_for_test(**kwargs) -> Memory:
     }
     defaults.update(kwargs)
     return Memory(**defaults)
+
+
+@pytest.mark.asyncio
+async def test_upsert_entity_returns_upserted_entity_by_id() -> None:
+    existing = Entity(
+        id=uuid.uuid4(),
+        name="Portal",
+        normalized_name="portal",
+        entity_type="system",
+        summary=None,
+        metadata_={},
+    )
+    session = FakeEntitySession(
+        FakeEntityExecuteResult(inserted_id=existing.id),
+        FakeEntityExecuteResult(entity=existing, fail_scalar_lookup=True),
+    )
+    service = OneBrainService.__new__(OneBrainService)
+
+    entity = await service._upsert_entity(
+        session,
+        EntityInput(name="Portal", entity_type="system", role="subject"),
+    )
+
+    assert entity is existing
+    assert session.added == []
+    assert session.flushed is False
+
+
+@pytest.mark.asyncio
+async def test_upsert_entity_returns_existing_entity_after_conflict_update() -> None:
+    existing = Entity(
+        id=uuid.uuid4(),
+        name="Specialist",
+        normalized_name="specialist",
+        entity_type="concept",
+        summary=None,
+        metadata_={},
+    )
+    session = FakeEntitySession(
+        FakeEntityExecuteResult(inserted_id=existing.id),
+        FakeEntityExecuteResult(entity=existing, fail_scalar_lookup=True),
+    )
+    service = OneBrainService.__new__(OneBrainService)
+
+    entity = await service._upsert_entity(
+        session,
+        EntityInput(name="Specialist", entity_type="concept", role="subject"),
+    )
+
+    assert entity is existing
+    assert session.added == []
+    assert session.flushed is False
 
 
 def test_graph_response_keeps_machine_readable_nodes_and_edges() -> None:
