@@ -1,0 +1,63 @@
+{
+  "organization": "example-org",
+  "projects": [
+    {
+      "id": "project-guid",
+      "name": "Example Project"
+    }
+  ],
+  "repositories": [
+    {
+      "id": "repo-guid",
+      "name": "example-service",
+      "project": {
+        "name": "Example Project"
+      },
+      "webUrl": "https://dev.azure.com/example-org/Example%20Project/_git/example-service",
+      "remoteUrl": "https://example-org@dev.azure.com/example-org/Example%20Project/_git/example-service",
+      "defaultBranch": "refs/heads/main"
+    }
+  ],
+  "pull_requests": [
+    {
+      "pullRequestId": 123,
+      "title": "Example pull request",
+      "status": "completed",
+      "repository": {
+        "name": "example-service"
+      },
+      "project": "Example Project",
+      "createdBy": {
+        "displayName": "Jane Developer",
+        "uniqueName": "jane@example.com"
+      },
+      "url": "https://dev.azure.com/example-org/_apis/git/repositories/repo-guid/pullRequests/123"
+    }
+  ],
+  "work_items": [
+    {
+      "id": 456,
+      "project": "Example Project",
+      "url": "https://dev.azure.com/example-org/_apis/wit/workItems/456",
+      "fields": {
+        "System.TeamProject": "Example Project",
+        "System.WorkItemType": "User Story",
+        "System.State": "Active",
+        "System.Title": "Example business flow",
+        "System.AssignedTo": {
+          "displayName": "Jane Developer",
+          "uniqueName": "jane@example.com"
+        }
+      }
+    }
+  ],
+  "wikis": [
+    {
+      "id": "wiki-guid",
+      "name": "Example Project Wiki",
+      "project": "Example Project",
+      "url": "https://dev.azure.com/example-org/Example%20Project/_wiki/wikis/wiki-guid",
+      "content": "Example wiki root content exported from mcp__mcp_azuredevops."
+    }
+  ]
+}

@@ -258,6 +258,8 @@ def _harvest_target(state: HarvestState, target: dict[str, Any], config_dir: Pat
         harvest_github(state, target)
     elif kind == "azure-devops":
         harvest_azure_devops(state, target)
+    elif kind == "azure-devops-mcp-export":
+        harvest_azure_devops_mcp_export(state, target, config_dir)
     elif kind == "jira":
         harvest_jira(state, target)
     else:
@@ -550,6 +552,126 @@ def harvest_azure_devops(state: HarvestState, target: dict[str, Any]) -> None:
         if target.get("include_wikis", True):
             _harvest_azure_wikis(state, organization, project, headers, max_items)
         _harvest_azure_work_items(state, organization, project, headers, target, max_items)
+
+
+def harvest_azure_devops_mcp_export(
+    state: HarvestState, target: dict[str, Any], config_dir: Path
+) -> None:
+    export_path = _resolve_config_path(str(target["path"]), config_dir)
+    if not export_path.exists():
+        state.add_error("azure-devops-mcp", "export path does not exist", path=str(export_path))
+        return
+
+    payload = _load_json(export_path)
+    source_name = str(target.get("name") or export_path.stem)
+    organization = str(payload.get("organization") or target.get("organization") or "")
+    projects = _coerce_items(payload, "projects")
+    repositories = _coerce_items(payload, "repositories", "repos")
+    pull_requests = _coerce_items(payload, "pull_requests", "pullRequests", "pullrequests")
+    work_items = _coerce_items(payload, "work_items", "workItems", "workitems")
+    wikis = _coerce_items(payload, "wikis")
+
+    for repo in repositories:
+        project = _project_name(repo) or str(target.get("project") or "")
+        repo_name = str(
+            repo.get("name") or repo.get("repository") or repo.get("id") or "repository"
+        )
+        repo_record = {
+            "provider": "azure-devops-mcp",
+            "organization": organization or None,
+            "project": project or None,
+            "name": repo_name,
+            "id": repo.get("id"),
+            "source_url": repo.get("webUrl") or repo.get("remoteUrl") or repo.get("url"),
+            "remote_url": repo.get("remoteUrl"),
+            "default_branch": repo.get("defaultBranch") or repo.get("default_branch"),
+            "mcp_export": str(export_path),
+        }
+        state.manifest["repositories"].append(repo_record)
+
+    for pull in pull_requests:
+        author = pull.get("createdBy") or pull.get("user") or pull.get("author") or {}
+        if isinstance(author, dict):
+            state.add_person(
+                author.get("displayName") or author.get("uniqueName") or author.get("login"),
+                provider="azure-devops-mcp",
+                role="pull-request-author",
+            )
+        state.manifest["pull_requests"].append(
+            _compact_pull("azure-devops-mcp", _mcp_repo_label(pull), pull)
+        )
+
+    for item in work_items:
+        fields = item.get("fields") or {}
+        project = str(item.get("project") or fields.get("System.TeamProject") or "")
+        for field_name, role in (
+            ("System.AssignedTo", "assigned-to"),
+            ("System.CreatedBy", "created-by"),
+            ("System.ChangedBy", "changed-by"),
+        ):
+            identity = fields.get(field_name) or {}
+            if isinstance(identity, dict):
+                state.add_person(
+                    identity.get("displayName") or identity.get("uniqueName"),
+                    provider="azure-devops-mcp",
+                    role=role,
+                )
+        state.manifest["work_items"].append(
+            _compact_work_item(project, item, provider="azure-devops-mcp")
+        )
+
+    for wiki in wikis:
+        state.manifest["wikis"].append({"provider": "azure-devops-mcp", **wiki})
+        content = str(wiki.get("content") or wiki.get("page_content") or "")
+        if content or wiki.get("name") or wiki.get("id"):
+            state.write_document(
+                provider="azure-devops-mcp-wiki",
+                slug=f"{wiki.get('project') or 'project'}-{wiki.get('name') or wiki.get('id')}",
+                title=f"Azure DevOps MCP Wiki Knowledge: {wiki.get('name') or wiki.get('id')}",
+                content=_wiki_document(wiki, content),
+                metadata={
+                    "artifact_kind": "wiki",
+                    "provider": "azure-devops-mcp",
+                    "project": wiki.get("project"),
+                    "wiki": wiki.get("name") or wiki.get("id"),
+                    "source_url": wiki.get("remoteUrl") or wiki.get("url"),
+                    "inferred": not bool(content),
+                    "scope": {
+                        "provider": "azure-devops-mcp",
+                        "project": wiki.get("project"),
+                        "wiki": wiki.get("name") or wiki.get("id"),
+                    },
+                },
+                tags=["wiki", "azure-devops", "mcp"],
+            )
+
+    state.write_document(
+        provider="azure-devops-mcp",
+        slug=source_name,
+        title=f"Azure DevOps MCP Knowledge Export: {source_name}",
+        content=_azure_mcp_export_document(
+            source_name=source_name,
+            organization=organization,
+            projects=projects,
+            repositories=repositories,
+            pull_requests=pull_requests,
+            work_items=work_items,
+            wikis=wikis,
+        ),
+        metadata={
+            "artifact_kind": "mcp-export",
+            "provider": "azure-devops-mcp",
+            "organization": organization or None,
+            "source_path": str(export_path),
+            "repository_count": len(repositories),
+            "pull_request_count": len(pull_requests),
+            "work_item_count": len(work_items),
+            "wiki_count": len(wikis),
+            "inferred": True,
+            "scope": {"provider": "azure-devops-mcp", "organization": organization},
+        },
+        tags=["azure-devops", "mcp", "knowledge-export"],
+    )
 
 
 def harvest_jira(state: HarvestState, target: dict[str, Any]) -> None:
@@ -1157,6 +1279,55 @@ def _work_items_document(project: str, work_items: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _azure_mcp_export_document(
+    *,
+    source_name: str,
+    organization: str,
+    projects: list[dict[str, Any]],
+    repositories: list[dict[str, Any]],
+    pull_requests: list[dict[str, Any]],
+    work_items: list[dict[str, Any]],
+    wikis: list[dict[str, Any]],
+) -> str:
+    lines = [
+        f"Source export: `{source_name}`",
+        f"Organization: {_md_value(organization)}",
+        "",
+        "## Counts",
+        f"- Projects: {len(projects)}",
+        f"- Repositories: {len(repositories)}",
+        f"- Pull requests: {len(pull_requests)}",
+        f"- Work items: {len(work_items)}",
+        f"- Wikis: {len(wikis)}",
+        "",
+        "## Projects",
+    ]
+    if projects:
+        for project in projects[:100]:
+            lines.append(f"- `{project.get('name') or project.get('id')}`")
+    else:
+        lines.append("- No project metadata was exported.")
+
+    lines.extend(["", "## Repositories"])
+    if repositories:
+        for repo in repositories[:100]:
+            project = _project_name(repo)
+            repo_name = repo.get("name") or repo.get("repository") or repo.get("id")
+            lines.append(f"- `{project or '-'}/{repo_name}`: {_md_value(repo.get('webUrl'))}")
+    else:
+        lines.append("- No repository metadata was exported.")
+
+    lines.extend(["", "## Pull Requests", _pull_table(pull_requests)])
+    lines.extend(["", "## Work Items", _work_items_document("mcp-export", work_items)])
+    lines.extend(["", "## Wikis"])
+    if wikis:
+        for wiki in wikis[:100]:
+            lines.append(f"- `{wiki.get('project') or '-'}/{wiki.get('name') or wiki.get('id')}`")
+    else:
+        lines.append("- No wiki metadata was exported.")
+    return "\n".join(lines)
+
+
 def _summary_document(state: HarvestState) -> str:
     manifest = state.manifest
     return "\n".join(
@@ -1332,10 +1503,12 @@ def _compact_issue(provider: str, repo: str, issue: dict[str, Any]) -> dict[str,
     }
 
 
-def _compact_work_item(project: str, item: dict[str, Any]) -> dict[str, Any]:
+def _compact_work_item(
+    project: str, item: dict[str, Any], *, provider: str = "azure-devops"
+) -> dict[str, Any]:
     fields = item.get("fields") or {}
     return {
-        "provider": "azure-devops",
+        "provider": provider,
         "project": project,
         "id": item.get("id"),
         "title": fields.get("System.Title"),
@@ -1343,6 +1516,42 @@ def _compact_work_item(project: str, item: dict[str, Any]) -> dict[str, Any]:
         "type": fields.get("System.WorkItemType"),
         "url": item.get("url"),
     }
+
+
+def _coerce_items(payload: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            nested = value.get("value") or value.get("items") or value.get("results")
+            if isinstance(nested, list):
+                return [item for item in nested if isinstance(item, dict)]
+    value = payload.get("value")
+    if len(keys) == 1 and isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _project_name(value: dict[str, Any]) -> str | None:
+    project = value.get("project")
+    if isinstance(project, dict):
+        return project.get("name") or project.get("id")
+    if isinstance(project, str):
+        return project
+    return value.get("projectName") or value.get("project_name")
+
+
+def _mcp_repo_label(value: dict[str, Any]) -> str:
+    repository = value.get("repository")
+    if isinstance(repository, dict):
+        repo_name = repository.get("name") or repository.get("id")
+    else:
+        repo_name = repository or value.get("repositoryName") or value.get("repo")
+    project = _project_name(value)
+    if project and repo_name:
+        return f"{project}/{repo_name}"
+    return str(repo_name or project or "azure-devops-mcp")
 
 
 def _github_clone_urls(
@@ -1415,10 +1624,15 @@ def _safe_target(target: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict):
         raise SystemExit(f"config must be a JSON object: {path}")
     return payload
+
+
+def _resolve_config_path(path: str, config_dir: Path) -> Path:
+    raw_path = Path(path)
+    return raw_path if raw_path.is_absolute() else (config_dir / raw_path).resolve()
 
 
 def _env_first(*names: str) -> str | None:

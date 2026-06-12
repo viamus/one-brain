@@ -32,7 +32,7 @@ python ops/plugins/onebrain/skills/onebrain-knowledge-harvest/scripts/knowledge_
 
 The script reads `ONEBRAIN_API_URL` and `ONEBRAIN_API_KEY` by default. It posts to `/memories` using bearer auth and writes the ingest result back to `ingest-result.json`.
 
-For Azure DevOps inside Codex, prefer the existing MCP before using REST fallback. The reference MCP is `viamus/mcp-azure-devops` at https://github.com/viamus/mcp-azure-devops. If tools under `mcp__mcp_azuredevops` are available, use them for repositories, files, pull requests, work items, builds, and wikis, then write their outputs into the same knowledge pack contract. Use the bundled script's Azure DevOps REST mode only for cloud/Gemini runners or environments where the MCP is not configured.
+For Azure DevOps inside Codex, prefer the existing MCP before using REST fallback. The reference MCP is `viamus/mcp-azure-devops` at https://github.com/viamus/mcp-azure-devops. The Python script does not call Codex MCP tools directly; Codex calls `mcp__mcp_azuredevops`, writes a JSON export, and the script consumes that file with a `kind: "azure-devops-mcp-export"` target. Use the bundled script's Azure DevOps REST mode only for cloud/Gemini runners or environments where the MCP is not configured.
 
 ## Source Configuration
 
@@ -44,6 +44,16 @@ Read `references/source-config.schema.json` before authoring a config. Keep secr
 - OneBrain: `ONEBRAIN_API_URL` and `ONEBRAIN_API_KEY`
 
 Read `references/environment.md` before running an authenticated harvest. Source configs store the names of environment variables, never secret values. Codex, cloud, Gemini, and CI runners must inject the real secret values through their own runtime environment or secret manager.
+
+For MCP-first Azure DevOps runs, export the MCP results to JSON using the shape in `references/sample-azure-devops-mcp-export.json`, then include this target:
+
+```json
+{
+  "kind": "azure-devops-mcp-export",
+  "path": "resources/artifacts/ado-mcp-export.json",
+  "name": "ado-catalog"
+}
+```
 
 Use `references/provider-endpoints.md` when changing provider coverage. It records the official APIs this skill is based on.
 
@@ -76,7 +86,7 @@ When using MCP instead of HTTP, call `onebrain_import_memory_files` against the 
 
 For GitHub, collect repository metadata, clone URLs, contributors, issues, pull requests, README, local docs from clone, and wiki clone attempts.
 
-For Azure DevOps, collect projects, Git repositories, pull requests, wikis, wiki root pages, WIQL work items, and work item details in batches. In Codex, use `mcp__mcp_azuredevops` first and preserve the MCP result payloads in `manifest.json`.
+For Azure DevOps, collect projects, Git repositories, pull requests, wikis, wiki root pages, WIQL work items, and work item details in batches. In Codex, use `mcp__mcp_azuredevops` first, persist the MCP result payloads as an `azure-devops-mcp-export` JSON file, and preserve that export's contents in `manifest.json`.
 
 For Jira Cloud, collect projects and JQL search results. Use active people from assignee, reporter, creator, and status transitions present in the issue payload.
 

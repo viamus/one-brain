@@ -24,6 +24,7 @@
           { "$ref": "#/$defs/localRepositoryTarget" },
           { "$ref": "#/$defs/githubTarget" },
           { "$ref": "#/$defs/azureDevOpsTarget" },
+          { "$ref": "#/$defs/azureDevOpsMcpExportTarget" },
           { "$ref": "#/$defs/jiraTarget" }
         ]
       }
@@ -74,6 +75,20 @@
         },
         "max_items": { "type": "integer", "minimum": 1 },
         "max_files": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "azureDevOpsMcpExportTarget": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "azure-devops-mcp-export" },
+        "path": {
+          "type": "string",
+          "description": "Path to a JSON file produced from mcp__mcp_azuredevops tool responses."
+        },
+        "name": { "type": "string" },
+        "organization": { "type": "string" },
+        "project": { "type": "string" }
       }
     },
     "jiraTarget": {
