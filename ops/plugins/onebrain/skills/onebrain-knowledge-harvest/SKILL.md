@@ -43,6 +43,8 @@ Read `references/source-config.schema.json` before authoring a config. Keep secr
 - Jira Cloud: `JIRA_EMAIL` and `JIRA_API_TOKEN`
 - OneBrain: `ONEBRAIN_API_URL` and `ONEBRAIN_API_KEY`
 
+Read `references/environment.md` before running an authenticated harvest. Source configs store the names of environment variables, never secret values. Codex, cloud, Gemini, and CI runners must inject the real secret values through their own runtime environment or secret manager.
+
 Use `references/provider-endpoints.md` when changing provider coverage. It records the official APIs this skill is based on.
 
 ## Harvest Policy
