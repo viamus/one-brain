@@ -4,27 +4,27 @@ export const theme = createTheme({
   palette: {
     mode: "dark",
     primary: {
-      main: "#f97316",
-      contrastText: "#160a03"
+      main: "#D97757",
+      contrastText: "#251713"
     },
     secondary: {
-      main: "#8b7cff"
+      main: "#B8694D"
     },
     warning: {
-      main: "#f59e0b"
+      main: "#E1A34A"
     },
     background: {
-      default: "#070b12",
-      paper: "#0d1420"
+      default: "#0E0F0D",
+      paper: "#171816"
     },
     text: {
-      primary: "#e6edf7",
-      secondary: "#91a4bd"
+      primary: "#F2EFE7",
+      secondary: "#A9A39A"
     },
-    divider: "#1d2a3a",
+    divider: "#34352F",
     action: {
-      hover: "rgba(249, 115, 22, 0.1)",
-      selected: "rgba(249, 115, 22, 0.18)"
+      hover: "rgba(217, 119, 87, 0.1)",
+      selected: "rgba(217, 119, 87, 0.18)"
     }
   },
   shape: {
@@ -60,7 +60,7 @@ export const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          border: "1px solid #1d2a3a",
+          border: "1px solid #34352F",
           borderRadius: 8,
           backgroundImage: "none",
           boxShadow: "0 18px 48px rgba(0, 0, 0, 0.28)"
@@ -77,15 +77,15 @@ export const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: {
-          backgroundColor: "#172235",
-          color: "#d7e3f3"
+          backgroundColor: "#20211E",
+          color: "#F2EFE7"
         }
       }
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          backgroundColor: "#0a111c"
+          backgroundColor: "#121311"
         }
       }
     }

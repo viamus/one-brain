@@ -399,11 +399,11 @@ type MemoryFlowNode = Node<FlowNodeData>;
 type MemoryFlowEdge = Edge<FlowEdgeData>;
 
 const edgeLegend: Record<EdgeKind, { label: string; color: string; icon: ReactElement }> = {
-  vector: { label: "Vector", color: "#8b7cff", icon: <Timeline fontSize="small" /> },
-  correlation: { label: "Correlation", color: "#2dd4bf", icon: <JoinInner fontSize="small" /> },
-  entity: { label: "Entity", color: "#f59e0b", icon: <Hub fontSize="small" /> },
-  explicit: { label: "Explicit", color: "#fb7185", icon: <AccountTree fontSize="small" /> },
-  other: { label: "Other", color: "#94a3b8", icon: <AccountTree fontSize="small" /> }
+  vector: { label: "Vector", color: "#7AA7D9", icon: <Timeline fontSize="small" /> },
+  correlation: { label: "Correlation", color: "#65B891", icon: <JoinInner fontSize="small" /> },
+  entity: { label: "Entity", color: "#E1A34A", icon: <Hub fontSize="small" /> },
+  explicit: { label: "Explicit", color: "#D97757", icon: <AccountTree fontSize="small" /> },
+  other: { label: "Other", color: "#A9A39A", icon: <AccountTree fontSize="small" /> }
 };
 
 const layoutOptions: Record<LayoutMode, { label: string; icon: ReactElement }> = {
@@ -612,7 +612,7 @@ function LiveGraph({
           maxZoom={1.7}
           onlyRenderVisibleElements
         >
-          <Background color="#1d2a3a" gap={28} />
+          <Background color="#34352F" gap={28} />
           <Controls showInteractive={false} />
           <MiniMap
             pannable
@@ -854,7 +854,7 @@ function buildFlowNodes(graph: GraphResponse, layoutMode: LayoutMode): MemoryFlo
         label: node.label,
         node,
         role,
-        accent: isCentroid ? "#c2410c" : nodeAccent(node),
+        accent: isCentroid ? "#D97757" : nodeAccent(node),
         groupLabels: context.memberships.get(node.id) || [],
         dimmed: false
       }
@@ -885,9 +885,9 @@ function buildFlowEdges(edges: GraphEdge[], showLabels: boolean): MemoryFlowEdge
       },
       labelBgPadding: [4, 3],
       labelBgBorderRadius: 4,
-      labelBgStyle: { fill: "#0d1420", fillOpacity: 0.94 },
+      labelBgStyle: { fill: "#171816", fillOpacity: 0.94 },
       labelStyle: {
-        fill: "#d7e3f3",
+        fill: "#F2EFE7",
         fontWeight: 600,
         fontSize: 11
       },
@@ -1258,18 +1258,18 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function nodeAccent(node: GraphNode) {
   if (node.node_type === "entity") {
-    return "#f59e0b";
+    return "#E1A34A";
   }
   if (node.subtype === "skill") {
-    return "#8b7cff";
+    return "#BBA7F2";
   }
   if (node.subtype === "workflow" || node.subtype === "decision") {
-    return "#fb7185";
+    return "#DFA5D6";
   }
   if (node.subtype === "rule" || node.subtype === "runbook") {
-    return "#2dd4bf";
+    return "#65B891";
   }
-  return "#60a5fa";
+  return "#7AA7D9";
 }
 
 type JobsPanelProps = {

@@ -6,20 +6,20 @@ body,
 
 :root {
   color-scheme: dark;
-  --ob-bg: #070b12;
-  --ob-bg-soft: #0a111c;
-  --ob-surface: #0d1420;
-  --ob-surface-2: #111c2c;
-  --ob-surface-3: #172235;
-  --ob-border: #1d2a3a;
-  --ob-border-strong: #2a3b52;
-  --ob-text: #e6edf7;
-  --ob-muted: #91a4bd;
-  --ob-muted-2: #6f849d;
-  --ob-primary: #f97316;
-  --ob-primary-strong: #ea580c;
-  --ob-primary-soft: rgba(249, 115, 22, 0.16);
-  --ob-shadow: rgba(0, 0, 0, 0.36);
+  --ob-bg: #0E0F0D;
+  --ob-bg-soft: #121311;
+  --ob-surface: #171816;
+  --ob-surface-2: #20211E;
+  --ob-surface-3: #20211E;
+  --ob-border: #34352F;
+  --ob-border-strong: #4A4B43;
+  --ob-text: #F2EFE7;
+  --ob-muted: #A9A39A;
+  --ob-muted-2: #9A8F7E;
+  --ob-primary: #D97757;
+  --ob-primary-strong: #B8694D;
+  --ob-primary-soft: rgba(217, 119, 87, 0.16);
+  --ob-shadow: rgba(0, 0, 0, 0.38);
 }
 
 body {
@@ -30,13 +30,13 @@ body {
 .app-shell {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 22% 0%, rgba(249, 115, 22, 0.09), transparent 36%),
-    linear-gradient(180deg, #070b12, #0a111c 58%, #070b12);
+    radial-gradient(circle at 22% 0%, rgba(217, 119, 87, 0.1), transparent 36%),
+    linear-gradient(180deg, #0E0F0D, #121311 58%, #0E0F0D);
 }
 
 .top-bar {
   border-bottom: 1px solid var(--ob-border);
-  background: rgba(7, 11, 18, 0.92);
+  background: rgba(14, 15, 13, 0.92);
   backdrop-filter: blur(14px);
 }
 
@@ -53,9 +53,9 @@ body {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: #160a03;
+  color: #251713;
   background: var(--ob-primary);
-  box-shadow: 0 0 28px rgba(249, 115, 22, 0.28);
+  box-shadow: 0 0 28px rgba(217, 119, 87, 0.28);
 }
 
 .section-tabs {
@@ -132,7 +132,7 @@ body {
   min-height: 30px;
   padding: 4px 8px;
   border-color: var(--ob-border-strong);
-  color: #c9d8e8;
+  color: #E8E2D6;
   font-size: 0.74rem;
   font-weight: 700;
   line-height: 1;
@@ -140,7 +140,7 @@ body {
 }
 
 .flow-panel .MuiToggleButton-root.Mui-selected {
-  color: #160a03;
+  color: #251713;
   background: var(--ob-primary);
 }
 
@@ -168,16 +168,16 @@ body {
 .flow-node {
   width: 184px;
   padding: 8px 10px;
-  border: 2px solid #2f6fb0;
+  border: 2px solid #7AA7D9;
   border-radius: 8px;
   color: var(--ob-text);
-  background: rgba(13, 20, 32, 0.96);
+  background: rgba(23, 24, 22, 0.96);
   box-shadow: 0 14px 28px var(--ob-shadow);
 }
 
 .flow-node-selected {
   box-shadow:
-    0 0 0 4px rgba(249, 115, 22, 0.2),
+    0 0 0 4px rgba(217, 119, 87, 0.22),
     0 18px 36px rgba(0, 0, 0, 0.38);
 }
 
@@ -197,7 +197,7 @@ body {
   min-width: 36px;
   padding: 2px 5px;
   border-radius: 999px;
-  color: #c9d8e8;
+  color: #E8E2D6;
   background: var(--ob-surface-3);
   font-size: 0.68rem;
   font-weight: 700;
@@ -209,7 +209,7 @@ body {
   padding: 2px 7px;
   border-radius: 999px;
   overflow: hidden;
-  color: #c9d8e8;
+  color: #E8E2D6;
   background: var(--ob-surface-3);
   font-size: 0.68rem;
   line-height: 1.35;
@@ -339,7 +339,7 @@ body {
 
 .detail-row strong {
   overflow: hidden;
-  color: #d7e3f3;
+  color: #F2EFE7;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -365,21 +365,21 @@ body {
 
 .react-flow__minimap {
   border: 1px solid var(--ob-border);
-  background: rgba(7, 11, 18, 0.88);
+  background: rgba(14, 15, 13, 0.88);
 }
 
 .react-flow__minimap svg {
-  background: rgba(7, 11, 18, 0.9);
+  background: rgba(14, 15, 13, 0.9);
 }
 
 .react-flow__minimap-mask {
-  fill: rgba(249, 115, 22, 0.12);
-  stroke: rgba(249, 115, 22, 0.46);
+  fill: rgba(217, 119, 87, 0.12);
+  stroke: rgba(217, 119, 87, 0.46);
 }
 
 .react-flow__attribution {
   color: var(--ob-muted-2);
-  background: rgba(7, 11, 18, 0.72);
+  background: rgba(14, 15, 13, 0.72);
 }
 
 .metric-card {
