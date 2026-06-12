@@ -1,3 +1,7 @@
+x-onebrain-build: &onebrain-build
+  context: .
+  dockerfile: ops/Dockerfile
+
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -21,7 +25,7 @@ services:
       retries: 5
 
   migrate:
-    build: .
+    build: *onebrain-build
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,11 +33,11 @@ services:
       - .env
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
-    command: ["alembic", "upgrade", "head"]
+    command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
     restart: "no"
 
   onebrain-api:
-    build: .
+    build: *onebrain-build
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,7 +76,7 @@ services:
       retries: 5
 
   onebrain-web:
-    build: .
+    build: *onebrain-build
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,7 +114,7 @@ services:
       retries: 5
 
   onebrain-mcp:
-    build: .
+    build: *onebrain-build
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,7 +144,7 @@ services:
       retries: 5
 
   onebrain-jobs:
-    build: .
+    build: *onebrain-build
     depends_on:
       postgres:
         condition: service_healthy

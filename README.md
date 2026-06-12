@@ -95,22 +95,22 @@ flowchart LR
 
 ```text
 .
-+-- src/onebrain_core/         # Domain contracts, application service, ingestion, graph logic
-+-- src/onebrain_infra/        # PostgreSQL/pgvector, embeddings, and SQLAlchemy models
-+-- src/onebrain_api/          # HTTP API surface and OpenAPI contract
-+-- src/onebrain_web/          # Django host for the React web build
-+-- src/onebrain_mcp/          # MCP tools, auth, stdio, and HTTP ASGI app
-+-- src/onebrain_jobs/         # Background jobs, schedulers, and Django management commands
-+-- src/onebrain_host/         # Django/ASGI/runtime composition and health endpoints
-+-- src/onebrain_ml/           # ML memory classification and future ranking/correlation work
-+-- src/onebrain_django/       # Compatibility namespace for the former monolith package
-+-- apps/web/                  # React + TypeScript + Material UI frontend workspace
-+-- manage.py                  # Host management entry point
-+-- migrations/                # Alembic migrations
-+-- tests/                     # Unit tests
++-- backend/
+|   +-- src/                  # Python packages: core, infra, API, Web host, MCP, Jobs, ML
+|   +-- tests/                # Python unit and integration tests
+|   +-- migrations/           # Alembic migrations
+|   +-- alembic.ini           # Migration config
+|   +-- manage.py             # Host management entry point
++-- frontend/web/             # React + TypeScript + Material UI workspace
++-- ops/
+|   +-- Dockerfile            # Production container image
+|   +-- scripts/              # Local lab and corpus helper scripts
++-- resources/
+|   +-- docs/                 # Runbooks and architecture notes
+|   +-- artifacts/            # Local/generated ML artifacts
 +-- package.json               # npm workspace root for frontend packages
 +-- docker-compose.yml         # PostgreSQL/pgvector, migrations, API, Web, MCP, Jobs
-+-- Dockerfile                 # Production container image
++-- pyproject.toml             # Python package/build/test config
 +-- .env.example               # Local configuration template
 +-- CONTRIBUTING.md            # Contribution guide
 +-- LICENSE                    # Apache License 2.0
@@ -168,8 +168,8 @@ docker compose down
 ```
 
 OneBrain stores PostgreSQL, job state, and ML artifacts in external Docker volumes by
-default. Use `.\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge the
-local knowledge database.
+default. Use `.\ops\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge
+the local knowledge database.
 
 ## Docker Compose Services
 
@@ -202,7 +202,7 @@ ONEBRAIN_API_KEYS=
 ONEBRAIN_API_PORT=8088
 ONEBRAIN_WEB_PORT=8089
 ONEBRAIN_MCP_PORT=8090
-ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=artifacts/memory-classifier.json
+ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=resources/artifacts/memory-classifier.json
 ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
@@ -310,7 +310,8 @@ The older `/v1/*` path is still routed by the API service as a compatibility ali
 
 ### Web Workspace
 
-OneBrain Web lives in `apps/web` and is built with React, TypeScript, Vite, and Material UI.
+OneBrain Web lives in `frontend/web` and is built with React, TypeScript, Vite, Material UI,
+and React Flow for the live graph explorer.
 Django remains the host process for the deployed bundle and serves Vite assets under
 `/web/assets/*`.
 
@@ -485,7 +486,7 @@ By default the importer learns from every eligible source document under `--docs
 `--max-files` only for smoke tests or partial imports.
 
 For clean corpus ingestion and graph-correlation experiments, use the lab runbook:
-[docs/corpus-lab.md](docs/corpus-lab.md).
+[resources/docs/corpus-lab.md](resources/docs/corpus-lab.md).
 
 Analyze a catalog library from Docker:
 
@@ -765,7 +766,7 @@ docker compose up -d postgres
 uv sync --dev
 npm install
 npm run web:build
-uv run alembic upgrade head
+uv run alembic -c backend/alembic.ini upgrade head
 uv run onebrain-host
 ```
 
@@ -805,13 +806,13 @@ docker compose run --rm migrate
 Host-based migration:
 
 ```powershell
-uv run alembic upgrade head
+uv run alembic -c backend/alembic.ini upgrade head
 ```
 
 Create a new migration after changing SQLAlchemy models:
 
 ```powershell
-uv run alembic revision --autogenerate -m "describe change"
+uv run alembic -c backend/alembic.ini revision --autogenerate -m "describe change"
 ```
 
 Review generated migrations before committing.

@@ -2,13 +2,13 @@
   "name": "onebrain-monorepo",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "frontend/web"
   ],
   "scripts": {
-    "web:dev": "npm --workspace apps/web run dev",
-    "web:build": "npm --workspace apps/web run build",
-    "web:preview": "npm --workspace apps/web run preview",
-    "web:typecheck": "npm --workspace apps/web run typecheck"
+    "web:dev": "npm --workspace frontend/web run dev",
+    "web:build": "npm --workspace frontend/web run build",
+    "web:preview": "npm --workspace frontend/web run preview",
+    "web:typecheck": "npm --workspace frontend/web run typecheck"
   },
   "engines": {
     "node": ">=22"

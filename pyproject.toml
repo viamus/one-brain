@@ -60,16 +60,16 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/onebrain_api",
-    "src/onebrain_cli",
-    "src/onebrain_core",
-    "src/onebrain_django",
-    "src/onebrain_host",
-    "src/onebrain_infra",
-    "src/onebrain_jobs",
-    "src/onebrain_mcp",
-    "src/onebrain_ml",
-    "src/onebrain_web",
+    "backend/src/onebrain_api",
+    "backend/src/onebrain_cli",
+    "backend/src/onebrain_core",
+    "backend/src/onebrain_django",
+    "backend/src/onebrain_host",
+    "backend/src/onebrain_infra",
+    "backend/src/onebrain_jobs",
+    "backend/src/onebrain_mcp",
+    "backend/src/onebrain_ml",
+    "backend/src/onebrain_web",
 ]
 
 [tool.ruff]
@@ -82,6 +82,6 @@ ignore = ["S101"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["backend/tests"]
 DJANGO_SETTINGS_MODULE = "onebrain_host.settings"
 python_files = ["test_*.py", "*_tests.py"]
