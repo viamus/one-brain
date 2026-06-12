@@ -10,13 +10,11 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
 $postgresVolume = if ($env:ONEBRAIN_POSTGRES_VOLUME) { $env:ONEBRAIN_POSTGRES_VOLUME } else { "onebrain_postgres_data" }
-$qdrantVolume = if ($env:ONEBRAIN_QDRANT_VOLUME) { $env:ONEBRAIN_QDRANT_VOLUME } else { "onebrain_qdrant_storage" }
 $jobStatusVolume = if ($env:ONEBRAIN_JOB_STATUS_VOLUME) { $env:ONEBRAIN_JOB_STATUS_VOLUME } else { "onebrain_job_status" }
 $mlArtifactsVolume = if ($env:ONEBRAIN_ML_ARTIFACTS_VOLUME) { $env:ONEBRAIN_ML_ARTIFACTS_VOLUME } else { "onebrain_ml_artifacts" }
 
 $volumesToRemove = @(
-    $postgresVolume,
-    $qdrantVolume
+    $postgresVolume
 )
 
 if (-not $PreserveJobStatus) {
@@ -62,7 +60,7 @@ foreach ($volume in $volumesToRemove) {
     }
 }
 
-Write-Host "Recreating OneBrain stack with empty PostgreSQL/Qdrant data..."
+Write-Host "Recreating OneBrain stack with empty PostgreSQL/pgvector data..."
 docker compose up -d --build
 if ($LASTEXITCODE -ne 0) {
     throw "docker compose up failed"

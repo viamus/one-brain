@@ -442,7 +442,7 @@ def _seed_examples() -> list[TrainingExample]:
         ),
         TrainingExample(
             "pitfall",
-            "Armadilha: nao assumir que a colecao Qdrant aceita outro tamanho de vetor.",
+            "Armadilha: nao assumir que a tabela pgvector aceita outro tamanho de vetor.",
         ),
         TrainingExample(
             "context",
@@ -454,7 +454,7 @@ def _seed_examples() -> list[TrainingExample]:
         ),
         TrainingExample(
             "context",
-            "Contexto do projeto: servico de memoria com Postgres, Qdrant, API, Web e MCP.",
+            "Contexto do projeto: servico de memoria com Postgres, pgvector, API, Web e MCP.",
         ),
         TrainingExample(
             "runbook",

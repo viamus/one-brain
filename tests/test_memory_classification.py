@@ -46,8 +46,8 @@ def test_memory_classifier_recognizes_portuguese_pitfall_language() -> None:
         MemoryClassificationInput(
             relative_path="notes/vector-size.md",
             content=(
-                "Armadilha: nao assumir que a colecao Qdrant aceita outro tamanho "
-                "de vetor sem recriar a collection."
+                "Armadilha: nao assumir que a tabela pgvector aceita outro tamanho "
+                "de vetor sem recriar a coluna."
             ),
         )
     )
@@ -278,7 +278,7 @@ def test_runtime_classifier_can_load_trained_artifact(monkeypatch, tmp_path) -> 
         result = classify_memory_type(
             MemoryClassificationInput(
                 title="Known pitfall",
-                content="Pitfall: avoid changing vector size without recreating Qdrant.",
+                content="Pitfall: avoid changing vector size without recreating pgvector storage.",
             )
         )
     finally:
@@ -299,7 +299,7 @@ def test_memory_classifier_cli_trains_from_jsonl(tmp_path, capsys) -> None:
         {
             "memory_type": "pitfall",
             "title": "Vector size risk",
-            "content": "Pitfall: do not change vector size without rebuilding Qdrant.",
+            "content": "Pitfall: do not change vector size without rebuilding pgvector storage.",
         },
     ]
     dataset_path.write_text(

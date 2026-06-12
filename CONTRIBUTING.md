@@ -6,7 +6,7 @@ Thanks for improving OneBrain. This project is intended to be a production-orien
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d postgres qdrant
+docker compose up -d postgres
 uv sync --dev
 uv run alembic upgrade head
 ```
@@ -36,8 +36,7 @@ uv run pytest -q
 ## Change Guidelines
 
 - Keep OneBrain's online path deterministic. Do not add LLM calls to context composition or retrieval.
-- Keep PostgreSQL as the canonical source of truth.
-- Keep Qdrant as an index, not the only source of memory data.
+- Keep PostgreSQL as the canonical source of truth, including vector recall through pgvector.
 - Keep MCP servers thin and deterministic.
 - Add migrations for schema changes.
 - Keep authentication and secret handling explicit.
@@ -67,7 +66,7 @@ Prefer small, descriptive commits. Examples:
 ```text
 Add API key auth documentation
 Add deterministic relation schema
-Fix Qdrant collection healthcheck
+Fix pgvector readiness check
 ```
 
 ## Security

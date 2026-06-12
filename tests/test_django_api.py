@@ -15,7 +15,7 @@ API_PREFIX = "/api/v1"
 
 class FakeDjangoService:
     async def health(self) -> dict[str, bool]:
-        return {"database": True, "qdrant": True}
+        return {"database": True, "vector_store": True}
 
     async def search(self, _payload) -> SearchResponse:
         return SearchResponse(query="django", hits=[])
@@ -41,7 +41,7 @@ def test_django_readyz_is_public_even_when_api_keys_are_configured() -> None:
     response = Client().get("/readyz")
 
     assert response.status_code == 200
-    assert response.json() == {"database": True, "qdrant": True}
+    assert response.json() == {"database": True, "vector_store": True}
 
 
 def test_django_home_serves_workbench_even_when_api_keys_are_configured() -> None:
@@ -49,16 +49,8 @@ def test_django_home_serves_workbench_even_when_api_keys_are_configured() -> Non
 
     assert response.status_code == 200
     content = response.content.decode()
-    assert 'src="/graph"' in content
-    assert "OneBrain Swagger" in content
-    assert "Graph Aggregation Jobs" in content
-    assert "Graph intelligence" in content
-    assert "Graphs" in content
-    assert "Swagger" in content
-    assert "Memory graph workbench" not in content
-    assert "Runtime" not in content
-    assert "Open graph" not in content
-    assert "OpenAPI JSON" not in content
+    assert 'id="root"' in content
+    assert "OneBrain Web" in content
 
 
 def test_django_openapi_json_is_public_and_describes_secured_api() -> None:

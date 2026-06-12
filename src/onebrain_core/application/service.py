@@ -56,7 +56,7 @@ from onebrain_infra.models import (
     MemoryLink,
     Relation,
 )
-from onebrain_infra.vector_store import QdrantMemoryStore
+from onebrain_infra.vector_store import MemoryVectorStore
 
 LOGGER = structlog.get_logger(__name__)
 
@@ -210,7 +210,7 @@ class OneBrainService:
         settings: Settings,
         session_factory: async_sessionmaker[AsyncSession],
         embeddings: EmbeddingProvider,
-        vector_store: QdrantMemoryStore,
+        vector_store: MemoryVectorStore,
     ) -> None:
         self._settings = settings
         self._session_factory = session_factory
@@ -779,12 +779,12 @@ class OneBrainService:
 
     async def health(self) -> dict[str, bool]:
         database_ok = False
-        qdrant_ok = False
+        vector_store_ok = False
         async with self._session_factory() as session:
             await session.execute(text("select 1"))
             database_ok = True
-        qdrant_ok = await self._vector_store.health()
-        return {"database": database_ok, "qdrant": qdrant_ok}
+        vector_store_ok = await self._vector_store.health()
+        return {"database": database_ok, "vector_store": vector_store_ok}
 
     async def _safe_vector_search(self, request: SearchRequest):
         filters: dict[str, Any] = {"status": request.filters.statuses}

@@ -20,7 +20,6 @@ from onebrain_core.contracts.schemas import (
     SearchRequest,
 )
 from onebrain_infra.models import Entity, Memory
-from onebrain_web.graph_ui import graph_view_html
 
 
 def test_graph_request_normalizes_blank_query() -> None:
@@ -1095,79 +1094,3 @@ async def test_compose_context_falls_back_when_graph_guided_related_fails() -> N
 
     assert [item.id for item in context.related] == [related_id]
     assert context.related[0].reasons == ["shared_entity"]
-
-
-def test_graph_view_html_points_to_graph_endpoint() -> None:
-    html = graph_view_html()
-
-    assert '<canvas id="graph"' in html
-    assert 'fetch("/graph/data"' in html
-    assert "include_entities: false" in html
-    assert "include_relations: false" in html
-    assert "apiKey" not in html
-    assert "detailsJson" not in html
-
-
-def test_graph_view_html_exposes_correlation_controls() -> None:
-    html = graph_view_html()
-
-    assert 'id="correlationLimit" type="number" min="0" max="2000"' in html
-    assert 'id="maxDegree" type="number" min="1" max="50"' in html
-    assert 'id="menuToggle"' not in html
-    assert 'id="graphMenu"' in html
-    assert 'id="includeVectorCorrelations"' not in html
-    assert 'id="includeGroupingOpportunities"' not in html
-    assert 'id="nightMode"' not in html
-    assert 'id="groupAccordion"' not in html
-    assert "include_vector_correlations: true" in html
-    assert "include_grouping_opportunities: true" in html
-    assert "correlation_limit: Number(correlationLimitEl.value || 250)" in html
-    assert "max_correlation_degree: Number(maxDegreeEl.value || 6)" in html
-
-
-def test_graph_view_html_highlights_roles_and_uses_single_animation_loop() -> None:
-    html = graph_view_html()
-
-    assert ':root[data-theme="dark"]' in html
-    assert "--ob-tigerlily" in html
-    assert "--graph-grid" in html
-    assert "function drawCanvasBackground(rect)" in html
-    assert 'class="metric-icon nodes"' in html
-    assert "#eef2f5" not in html
-    assert 'class="legend legend-horizontal"' in html
-    assert "bottom: 12px;" in html
-    assert "top: 12px;" not in html
-    assert "flex-wrap: nowrap;" in html
-    assert 'class="metrics top-metrics"' in html
-    assert 'class="legend-title">Legend</span>' in html
-    assert ">Memory</span>" in html
-    assert ">Context</span>" in html
-    assert ">Skill</span>" in html
-    assert ">Workflow</span>" in html
-    assert ">Rule</span>" in html
-    assert ">Runbook</span>" in html
-    assert ">Fact</span>" in html
-    assert ">Note</span>" in html
-    assert ">Entity</span>" in html
-    assert "Centroid candidate" in html
-    assert "Grouping opportunity" in html
-    assert "Correlation edge" not in html
-    assert "line-sample" not in html
-    assert 'id="spread"' in html
-    assert "document.documentElement.dataset.theme" in html
-    assert "centroid_candidate" in html
-    assert "grouping_opportunity" in html
-    assert "Loaded " not in html
-    assert 'id="groupEmpty"' not in html
-    assert "grouping_opportunities" in html
-    assert "function shouldDrawLabel(node, focused, primary)" in html
-    assert "ResizeObserver" in html
-    assert "scheduleViewportRefresh({ fit: true })" in html
-    assert "function edgeIsFocused(edge)" in html
-    assert "ctx.shadowBlur = 14" in html
-    assert "function layoutGraphPositions(nodes, rect)" in html
-    assert "let simulationTicksRemaining = 0" in html
-    assert "const pairStride = nodes.length > 180" in html
-    assert "function refreshPalette()" in html
-    assert "cancelAnimationFrame(animationFrameId)" in html
-    assert "animationFrameId = requestAnimationFrame(tick)" in html

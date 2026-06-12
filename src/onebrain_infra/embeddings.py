@@ -26,7 +26,7 @@ class HashEmbeddingProvider:
     """Deterministic local embeddings for offline operation and repeatable tests.
 
     This is not a replacement for a semantic embedding model, but it keeps the service
-    fully non-LLM and gives Qdrant a stable vector representation.
+    fully non-LLM and gives pgvector a stable vector representation.
     """
 
     def __init__(self, dimension: int) -> None:

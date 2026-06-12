@@ -1,0 +1,16 @@
+{
+  "name": "onebrain-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace apps/web run dev",
+    "web:build": "npm --workspace apps/web run build",
+    "web:preview": "npm --workspace apps/web run preview",
+    "web:typecheck": "npm --workspace apps/web run typecheck"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

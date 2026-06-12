@@ -13,7 +13,7 @@ def test_scope_matches_requires_all_requested_pairs() -> None:
 
 
 def test_extract_heuristic_entities_is_conservative() -> None:
-    assert extract_heuristic_entities("Use `Qdrant` for #vector-search.") == [
-        ("Qdrant", "concept"),
+    assert extract_heuristic_entities("Use `pgvector` for #vector-search.") == [
+        ("pgvector", "concept"),
         ("vector-search", "tag"),
     ]

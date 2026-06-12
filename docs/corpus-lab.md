@@ -26,7 +26,6 @@ Apply the reset:
 The reset removes:
 
 - `onebrain_postgres_data`
-- `onebrain_qdrant_storage`
 - `onebrain_job_status`
 
 The reset preserves:

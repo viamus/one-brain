@@ -10,4 +10,5 @@ urlpatterns = [
     path("", views.home_view, name="home"),
     path("graph", views.graph_view, name="graph-view"),
     path("graph/data", views.graph_data, name="graph-data"),
+    path("web/assets/<path:asset_path>", views.web_asset, name="web-asset"),
 ]

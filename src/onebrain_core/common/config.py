@@ -23,9 +23,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://onebrain:onebrain@localhost:5432/onebrain"
 
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: str | None = None
-    qdrant_collection: str = "onebrain_memories"
+    vector_table: str = "memory_vectors"
     vector_size: int = 384
 
     embedding_provider: Literal["hash", "fastembed", "openai"] = "hash"
