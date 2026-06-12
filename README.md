@@ -1,6 +1,6 @@
 # OneBrain
 
-OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories in PostgreSQL, indexes semantic recall vectors in Qdrant, and exposes separate API, Web, MCP, and Jobs service surfaces for enterprise usage.
+OneBrain is a production-oriented memory service for LLM tools, coding agents, and personal agent workflows. It stores durable memories and semantic recall vectors in PostgreSQL with pgvector, and exposes separate API, Web, MCP, and Jobs service surfaces for enterprise usage.
 
 OneBrain does not use an LLM in its online request path. The service remembers, retrieves, ranks, and explains. The calling LLM, such as Codex, is responsible for deeper reasoning over the context returned by OneBrain.
 
@@ -8,17 +8,16 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 
 - Captures durable memories with scope, tags, source, confidence, and entities.
 - Captures declarative skills as procedural memories with capabilities, tools, and versions.
-- Stores canonical state in PostgreSQL.
-- Stores embeddings in Qdrant for semantic recall.
+- Stores canonical state and embeddings in PostgreSQL with pgvector.
 - Builds a correlation view across memories, skills, workflows, and shared entities.
 - Builds deterministic context packs for LLM callers.
 - Classifies imported memory type with heuristic guardrails plus a lightweight ML fallback.
-- Exposes OneBrain Web for human graph exploration.
+- Exposes OneBrain Web as a React + TypeScript Material Design application for human graph exploration.
 - Exposes OneBrain API for memory, skill, graph, and contextual ingestion workflows.
 - Exposes OneBrain MCP over HTTP and stdio for Codex and other MCP clients.
 - Runs graph aggregation and future workers through OneBrain Jobs.
 - Supports API key authentication for deployed HTTP usage.
-- Runs with Docker Compose, including PostgreSQL, Qdrant, migrations, API, Web, MCP, and Jobs services.
+- Runs with Docker Compose, including PostgreSQL/pgvector, migrations, API, Web, MCP, and Jobs services.
 
 ## Architecture
 
@@ -33,17 +32,15 @@ flowchart LR
     MCP --> Core
     Jobs --> Core
     Core --> Infra["onebrain_infra<br/>database, vectors, embeddings"]
-    Infra --> Postgres["PostgreSQL<br/>canonical memory"]
-    Infra --> Qdrant["Qdrant<br/>vector recall"]
+    Infra --> Postgres["PostgreSQL + pgvector<br/>canonical memory + vector recall"]
     Infra --> Embed["Embedding Provider<br/>OpenAI / fastembed / hash"]
     ML["onebrain_ml<br/>memory classification<br/>future ranking"] -. optional scoring .-> Core
 ```
 
 Core responsibilities:
 
-- **PostgreSQL**: source of truth for memories, entities, relations, audit events, metadata, and validity windows.
-- **Qdrant**: vector index for recall and similarity search.
-- **onebrain_web**: enterprise human surface for graph exploration and future operations screens.
+- **PostgreSQL/pgvector**: source of truth for memories, entities, relations, audit events, metadata, validity windows, embeddings, and similarity search.
+- **onebrain_web**: Django host for the React + TypeScript Material Design web application.
 - **onebrain_api**: enterprise HTTP API for memory capture, skills, graph contracts, context packs, and contextual ingestion.
 - **onebrain_mcp**: agent interface for capture, search, correlation, and context composition.
 - **onebrain_jobs**: background workers and schedulers, starting with graph aggregation.
@@ -63,7 +60,7 @@ flowchart TB
         MCP["onebrain_mcp<br/>MCP tools and auth"]
         Jobs["onebrain_jobs<br/>scheduled workers"]
         Core["onebrain_core<br/>domain contracts, ingestion, graph logic"]
-        Infra["onebrain_infra<br/>SQLAlchemy, Qdrant, embeddings"]
+        Infra["onebrain_infra<br/>SQLAlchemy, pgvector, embeddings"]
         ML["onebrain_ml<br/>memory classification"]
     end
 
@@ -76,8 +73,7 @@ flowchart TB
     MCP --> Core
     Jobs --> Core
     Core --> Infra
-    Infra --> DB["PostgreSQL"]
-    Infra --> Vector["Qdrant"]
+    Infra --> DB["PostgreSQL + pgvector"]
     Infra --> Embeddings["Embedding provider"]
     ML -. classifies ambiguous memories .-> Core
 ```
@@ -92,28 +88,29 @@ flowchart LR
     ApiPort --> Shared
     McpPort --> Shared
     JobsSvc --> Shared
-    Shared --> Postgres["postgres"]
-    Shared --> Qdrant["qdrant"]
+    Shared --> Postgres["postgres + pgvector"]
 ```
 
 ## Repository Layout
 
 ```text
 .
-+-- src/onebrain_core/         # Domain contracts, application service, ingestion, graph logic
-+-- src/onebrain_infra/        # PostgreSQL, Qdrant, embeddings, and SQLAlchemy models
-+-- src/onebrain_api/          # HTTP API surface and OpenAPI contract
-+-- src/onebrain_web/          # Human presentation surface and graph UI
-+-- src/onebrain_mcp/          # MCP tools, auth, stdio, and HTTP ASGI app
-+-- src/onebrain_jobs/         # Background jobs, schedulers, and Django management commands
-+-- src/onebrain_host/         # Django/ASGI/runtime composition and health endpoints
-+-- src/onebrain_ml/           # ML memory classification and future ranking/correlation work
-+-- src/onebrain_django/       # Compatibility namespace for the former monolith package
-+-- manage.py                  # Host management entry point
-+-- migrations/                # Alembic migrations
-+-- tests/                     # Unit tests
-+-- docker-compose.yml         # PostgreSQL, Qdrant, migrations, API, Web, MCP, Jobs
-+-- Dockerfile                 # Production container image
++-- backend/
+|   +-- src/                  # Python packages: core, infra, API, Web host, MCP, Jobs, ML
+|   +-- tests/                # Python unit and integration tests
+|   +-- migrations/           # Alembic migrations
+|   +-- alembic.ini           # Migration config
+|   +-- manage.py             # Host management entry point
++-- frontend/web/             # React + TypeScript + Material UI workspace
++-- ops/
+|   +-- Dockerfile            # Production container image
+|   +-- scripts/              # Local lab and corpus helper scripts
++-- resources/
+|   +-- docs/                 # Runbooks and architecture notes
+|   +-- artifacts/            # Local/generated ML artifacts
++-- package.json               # npm workspace root for frontend packages
++-- docker-compose.yml         # PostgreSQL/pgvector, migrations, API, Web, MCP, Jobs
++-- pyproject.toml             # Python package/build/test config
 +-- .env.example               # Local configuration template
 +-- CONTRIBUTING.md            # Contribution guide
 +-- LICENSE                    # Apache License 2.0
@@ -124,6 +121,7 @@ flowchart LR
 - Docker 27+ with Docker Compose.
 - Optional for local development outside Docker:
   - Python 3.11+
+  - Node.js 22+
   - `uv`
 
 ## Quick Start With Docker Compose
@@ -143,7 +141,6 @@ docker compose up -d --build
 This starts:
 
 - `postgres`
-- `qdrant`
 - `migrate`, which runs `alembic upgrade head`
 - `onebrain-api`, the protected HTTP API surface
 - `onebrain-web`, the human presentation and graph surface
@@ -170,16 +167,15 @@ Stop the OneBrain stack:
 docker compose down
 ```
 
-OneBrain stores PostgreSQL, Qdrant, job state, and ML artifacts in external Docker volumes by
-default. Use `.\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge the
-local knowledge database.
+OneBrain stores PostgreSQL, job state, and ML artifacts in external Docker volumes by
+default. Use `.\ops\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge
+the local knowledge database.
 
 ## Docker Compose Services
 
 | Service | Purpose |
 | --- | --- |
-| `postgres` | PostgreSQL canonical memory store |
-| `qdrant` | Vector database for semantic recall |
+| `postgres` | PostgreSQL canonical memory and pgvector semantic recall store |
 | `migrate` | One-shot Alembic migration runner |
 | `onebrain-api` | HTTP API, OpenAPI, ingestion, search, context, and graph contracts |
 | `onebrain-web` | Human console and graph exploration surface |
@@ -189,7 +185,6 @@ local knowledge database.
 The Compose file overrides container network URLs automatically:
 
 - Docker services use `postgres:5432`, not `localhost:5432`.
-- Docker services use `qdrant:6333`, not `localhost:6333`.
 - The API, MCP, and Jobs services mount `C:\DoxieOS\github-private-catalog` as
   `/mnt/github-private-catalog` for private catalog ingestion and MCP file imports.
 
@@ -207,7 +202,7 @@ ONEBRAIN_API_KEYS=
 ONEBRAIN_API_PORT=8088
 ONEBRAIN_WEB_PORT=8089
 ONEBRAIN_MCP_PORT=8090
-ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=artifacts/memory-classifier.json
+ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=resources/artifacts/memory-classifier.json
 ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
 
@@ -218,6 +213,7 @@ POSTGRES_PASSWORD=onebrain
 ONEBRAIN_EMBEDDING_PROVIDER=hash
 ONEBRAIN_EMBEDDING_MODEL=text-embedding-3-small
 ONEBRAIN_OPENAI_API_KEY=
+ONEBRAIN_VECTOR_TABLE=memory_vectors
 ONEBRAIN_VECTOR_SIZE=384
 ```
 
@@ -236,7 +232,7 @@ ONEBRAIN_OPENAI_API_KEY=sk-...
 ONEBRAIN_VECTOR_SIZE=384
 ```
 
-`text-embedding-3-small` supports configurable dimensions. OneBrain passes `ONEBRAIN_VECTOR_SIZE` to the embeddings API for `text-embedding-3*` models. If you change vector size after data exists, use a new Qdrant collection name or recreate the collection.
+`text-embedding-3-small` supports configurable dimensions. OneBrain passes `ONEBRAIN_VECTOR_SIZE` to the embeddings API for `text-embedding-3*` models. If you change vector size after data exists, rebuild the `memory_vectors` table with a migration or reset the local PostgreSQL volume.
 
 ## Authentication
 
@@ -302,8 +298,8 @@ API routes:
 
 Web routes:
 
-- `GET /`: human console.
-- `GET /graph`: graph explorer for local visualization.
+- `GET /`: React OneBrain Web console.
+- `GET /graph`: React graph explorer for local visualization.
 - `POST /graph/data`: public local graph data endpoint used by the page.
 
 MCP routes:
@@ -312,11 +308,34 @@ MCP routes:
 
 The older `/v1/*` path is still routed by the API service as a compatibility alias. New integrations should use `/api/v1/*`.
 
+### Web Workspace
+
+OneBrain Web lives in `frontend/web` and is built with React, TypeScript, Vite, Material UI,
+and React Flow for the live graph explorer.
+Django remains the host process for the deployed bundle and serves Vite assets under
+`/web/assets/*`.
+
+Common frontend commands:
+
+```powershell
+npm install
+npm run web:dev
+npm run web:build
+npm run web:typecheck
+```
+
 ### Graph Aggregation Job
 
 Grouping opportunities detected by the graph can be materialized as aggregate `context` memories.
 The core aggregation logic lives in `onebrain_core`; operational scheduling lives in
 `onebrain_jobs`.
+
+Jobs use an Onion Ring shape:
+
+- Django management commands are thin edge adapters.
+- `onebrain_jobs.ring` owns execution lifecycle, persisted status, and scheduler callbacks.
+- Concrete jobs provide config/result snapshots plus `run_once`.
+- Domain work stays in `onebrain_core`.
 
 Run a one-shot aggregation:
 
@@ -467,7 +486,7 @@ By default the importer learns from every eligible source document under `--docs
 `--max-files` only for smoke tests or partial imports.
 
 For clean corpus ingestion and graph-correlation experiments, use the lab runbook:
-[docs/corpus-lab.md](docs/corpus-lab.md).
+[resources/docs/corpus-lab.md](resources/docs/corpus-lab.md).
 
 Analyze a catalog library from Docker:
 
@@ -743,9 +762,11 @@ memories. The Docker Compose MCP service maps `C:\DoxieOS\github-private-catalog
 You can run dependencies in Docker and one host-composed process locally:
 
 ```powershell
-docker compose up -d postgres qdrant
+docker compose up -d postgres
 uv sync --dev
-uv run alembic upgrade head
+npm install
+npm run web:build
+uv run alembic -c backend/alembic.ini upgrade head
 uv run onebrain-host
 ```
 
@@ -769,6 +790,7 @@ Run lint:
 ```powershell
 uv run ruff format .
 uv run ruff check .
+npm run web:typecheck
 ```
 
 ## Migrations
@@ -784,13 +806,13 @@ docker compose run --rm migrate
 Host-based migration:
 
 ```powershell
-uv run alembic upgrade head
+uv run alembic -c backend/alembic.ini upgrade head
 ```
 
 Create a new migration after changing SQLAlchemy models:
 
 ```powershell
-uv run alembic revision --autogenerate -m "describe change"
+uv run alembic -c backend/alembic.ini revision --autogenerate -m "describe change"
 ```
 
 Review generated migrations before committing.
@@ -800,7 +822,6 @@ Review generated migrations before committing.
 External Docker volumes:
 
 - `onebrain_postgres_data`
-- `onebrain_qdrant_storage`
 - `onebrain_job_status`
 - `onebrain_ml_artifacts`
 
@@ -810,7 +831,6 @@ Because these volumes are declared as external in `docker-compose.yml`, normal c
 Backup expectations for production:
 
 - PostgreSQL backups with PITR where possible.
-- Qdrant snapshots.
 - Memory classifier artifacts when trained models are promoted.
 - Migration history kept in source control.
 - Explicit restore drills before relying on backups.
@@ -822,7 +842,7 @@ Backup expectations for production:
 - Set `ONEBRAIN_EMBEDDING_PROVIDER=openai`.
 - Set `ONEBRAIN_OPENAI_API_KEY`.
 - Use strong PostgreSQL credentials.
-- Do not expose PostgreSQL or Qdrant publicly.
+- Do not expose PostgreSQL publicly.
 - Put HTTP behind TLS and a trusted ingress.
 - Enable platform logs and metrics.
 - Run `docker compose up -d --build` only after migrations are reviewed.
@@ -843,7 +863,7 @@ docker compose logs -f migrate
 
 If MCP cannot connect to Postgres inside Docker, verify the Compose override uses `postgres:5432`.
 
-If Qdrant vector size errors appear, the existing collection was created with a different vector size. Change `ONEBRAIN_QDRANT_COLLECTION` or recreate the Qdrant volume.
+If pgvector dimension errors appear, the existing `memory_vectors.embedding` column was created with a different vector size. Create a migration for the new dimension or reset the local PostgreSQL volume.
 
 If OpenAI embeddings fail at startup, verify:
 

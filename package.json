@@ -1,0 +1,16 @@
+{
+  "name": "onebrain-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend/web"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace frontend/web run dev",
+    "web:build": "npm --workspace frontend/web run build",
+    "web:preview": "npm --workspace frontend/web run preview",
+    "web:typecheck": "npm --workspace frontend/web run typecheck"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

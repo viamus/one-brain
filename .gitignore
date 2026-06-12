@@ -8,11 +8,12 @@ __pycache__/
 htmlcov/
 dist/
 build/
+node_modules/
+*.tsbuildinfo
 *.egg-info/
 *.pyc
 *.pyo
 *.pyd
 *.log
 data/
-qdrant_storage/
 postgres_data/
