@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from onebrain_host.asgi import build_application
+from onebrain.platform.asgi import build_application
 from starlette.routing import Mount
 
 

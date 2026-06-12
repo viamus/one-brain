@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from django.core.exceptions import RequestAborted
-from onebrain_host.disconnects import DisconnectTolerantAsgiApp
+from onebrain.platform.disconnects import DisconnectTolerantAsgiApp
 
 
 async def _receive() -> dict[str, object]:

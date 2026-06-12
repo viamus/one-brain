@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from onebrain_core.common.config import Settings
-from onebrain_host import runtime
+from onebrain.core.common.config import Settings
+from onebrain.platform import runtime
 
 
 @dataclass

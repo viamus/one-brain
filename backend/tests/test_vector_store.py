@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from onebrain_core.common.config import Settings
-from onebrain_infra.vector_store import PgVectorMemoryStore, build_memory_filter_clause
+from onebrain.core.common.config import Settings
+from onebrain.infrastructure.vector_store import PgVectorMemoryStore, build_memory_filter_clause
 
 
 def test_pgvector_filter_clause_maps_canonical_memory_filters() -> None:

@@ -4,10 +4,10 @@ import json
 
 import pytest
 from django.test import Client
-from onebrain_core.common.config import Settings
-from onebrain_core.contracts.schemas import GraphResponse, SearchResponse
-from onebrain_host.runtime import clear_runtime_overrides, set_runtime_overrides
-from onebrain_jobs.status import JOB_NAME_GRAPH_AGGREGATION, write_job_status
+from onebrain.core.common.config import Settings
+from onebrain.core.contracts.schemas import GraphResponse, SearchResponse
+from onebrain.platform.runtime import clear_runtime_overrides, set_runtime_overrides
+from onebrain.workers.status import JOB_NAME_GRAPH_AGGREGATION, write_job_status
 
 API_PREFIX = "/api/v1"
 

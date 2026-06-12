@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from onebrain_ml.cli import main as memory_classifier_main
-from onebrain_ml.memory_classification import (
+from onebrain.ml.cli import main as memory_classifier_main
+from onebrain.ml.memory_classification import (
     RUNTIME_MODEL_PATH_ENV,
     MemoryClassificationInput,
     TrainingExample,
@@ -11,7 +11,7 @@ from onebrain_ml.memory_classification import (
     clear_runtime_classifier_cache,
     load_memory_classifier,
 )
-from onebrain_ml.memory_classification_training import (
+from onebrain.ml.memory_classification_training import (
     TrainingExampleSource,
     balance_training_examples,
     cross_validate_memory_classifier,

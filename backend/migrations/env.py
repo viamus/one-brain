@@ -3,8 +3,8 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from onebrain_core.common.config import get_settings
-from onebrain_infra.models import Base
+from onebrain.core.common.config import get_settings
+from onebrain.infrastructure.models import Base
 from sqlalchemy import engine_from_config, pool
 
 config = context.config

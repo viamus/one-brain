@@ -47,7 +47,7 @@ services:
       - .env
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
-      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      DJANGO_SETTINGS_MODULE: onebrain.platform.settings
       ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-api,0.0.0.0
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
@@ -66,7 +66,7 @@ services:
     volumes:
       - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
-      - onebrain_ml_artifacts:/var/lib/onebrain/ml
+      - onebrain.ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-api"]
     restart: unless-stopped
     healthcheck:
@@ -86,7 +86,7 @@ services:
       - .env
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
-      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      DJANGO_SETTINGS_MODULE: onebrain.platform.settings
       ONEBRAIN_DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,onebrain-web,0.0.0.0
       ONEBRAIN_DJANGO_DEBUG: "true"
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
@@ -104,7 +104,7 @@ services:
       - "127.0.0.1:${ONEBRAIN_WEB_PORT:-8089}:8000"
     volumes:
       - onebrain_job_status:/var/lib/onebrain/jobs
-      - onebrain_ml_artifacts:/var/lib/onebrain/ml
+      - onebrain.ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-web"]
     restart: unless-stopped
     healthcheck:
@@ -124,7 +124,7 @@ services:
       - .env
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
-      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      DJANGO_SETTINGS_MODULE: onebrain.platform.settings
       ONEBRAIN_DJANGO_HOST: 0.0.0.0
       ONEBRAIN_DJANGO_PORT: 8000
       ONEBRAIN_MCP_PATH_MAPPINGS: "C:\\DoxieOS\\github-private-catalog=/mnt/github-private-catalog"
@@ -134,7 +134,7 @@ services:
       - "127.0.0.1:${ONEBRAIN_MCP_PORT:-8090}:8000"
     volumes:
       - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
-      - onebrain_ml_artifacts:/var/lib/onebrain/ml
+      - onebrain.ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-mcp-http"]
     restart: unless-stopped
     healthcheck:
@@ -154,7 +154,7 @@ services:
       - .env
     environment:
       ONEBRAIN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-onebrain}:${POSTGRES_PASSWORD:-onebrain}@postgres:5432/${POSTGRES_DB:-onebrain}
-      DJANGO_SETTINGS_MODULE: onebrain_host.settings
+      DJANGO_SETTINGS_MODULE: onebrain.platform.settings
       ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON: '${ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON:-{"catalog":"private-engineering-catalog","source":"github-private-catalog"}}'
       ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS: ${ONEBRAIN_GRAPH_AGGREGATION_INTERVAL_SECONDS:-3600}
       ONEBRAIN_GRAPH_AGGREGATION_LIMIT: ${ONEBRAIN_GRAPH_AGGREGATION_LIMIT:-500}
@@ -167,7 +167,7 @@ services:
     volumes:
       - C:/DoxieOS/github-private-catalog:/mnt/github-private-catalog:ro
       - onebrain_job_status:/var/lib/onebrain/jobs
-      - onebrain_ml_artifacts:/var/lib/onebrain/ml
+      - onebrain.ml_artifacts:/var/lib/onebrain/ml
     command: ["onebrain-jobs", "run_scheduled_jobs", "--job", "graph-aggregation"]
     restart: unless-stopped
 
@@ -178,6 +178,6 @@ volumes:
   onebrain_job_status:
     name: ${ONEBRAIN_JOB_STATUS_VOLUME:-onebrain_job_status}
     external: true
-  onebrain_ml_artifacts:
-    name: ${ONEBRAIN_ML_ARTIFACTS_VOLUME:-onebrain_ml_artifacts}
+  onebrain.ml_artifacts:
+    name: ${ONEBRAIN_ML_ARTIFACTS_VOLUME:-onebrain.ml_artifacts}
     external: true

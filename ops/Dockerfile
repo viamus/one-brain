@@ -28,10 +28,10 @@ COPY pyproject.toml uv.lock README.md ./
 COPY backend/src ./backend/src
 COPY backend/alembic.ini ./backend/alembic.ini
 COPY backend/migrations ./backend/migrations
-COPY --from=web-build /app/frontend/web/dist ./backend/src/onebrain_web/react_build
+COPY --from=web-build /app/frontend/web/dist ./backend/src/onebrain/interfaces/web/react_build
 
 RUN uv sync --frozen --no-dev --no-editable
 
 EXPOSE 8000
 
-CMD ["onebrain-host"]
+CMD ["onebrain-api"]

@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from onebrain_core.application.memory_hardening import (
+from onebrain.core.application.memory_hardening import (
     build_file_memory_candidates,
     harden_memory_payload,
 )
-from onebrain_core.application.memory_importer import import_memory_files
+from onebrain.core.application.memory_importer import import_memory_files
 
 
 class FakeMemoryClient:

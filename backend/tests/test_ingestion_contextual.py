@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from onebrain_core.contracts.schemas import IngestionAnalyzeRequest, IngestionCommitRequest
-from onebrain_core.ingestion import analyze_memory_files, commit_ingestion_plan
+from onebrain.core.contracts.schemas import IngestionAnalyzeRequest, IngestionCommitRequest
+from onebrain.core.ingestion import analyze_memory_files, commit_ingestion_plan
 
 
 class FakeIngestionService:

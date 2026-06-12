@@ -27,25 +27,25 @@ flowchart LR
     Human["Human operator"] --> Web["onebrain-web<br/>presentation /graph"]
     Integrator["Agent / automation"] --> API["onebrain-api<br/>HTTP /api/v1"]
     Scheduler["Worker runtime"] --> Jobs["onebrain-jobs<br/>graph aggregation"]
-    Web --> Core["onebrain_core<br/>contracts and application service"]
+    Web --> Core["onebrain.core<br/>contracts and application service"]
     API --> Core
     MCP --> Core
     Jobs --> Core
-    Core --> Infra["onebrain_infra<br/>database, vectors, embeddings"]
+    Core --> Infra["onebrain.infrastructure<br/>database, vectors, embeddings"]
     Infra --> Postgres["PostgreSQL + pgvector<br/>canonical memory + vector recall"]
     Infra --> Embed["Embedding Provider<br/>OpenAI / fastembed / hash"]
-    ML["onebrain_ml<br/>memory classification<br/>future ranking"] -. optional scoring .-> Core
+    ML["onebrain.ml<br/>memory classification<br/>future ranking"] -. optional scoring .-> Core
 ```
 
 Core responsibilities:
 
 - **PostgreSQL/pgvector**: source of truth for memories, entities, relations, audit events, metadata, validity windows, embeddings, and similarity search.
-- **onebrain_web**: Django host for the React + TypeScript Material Design web application.
-- **onebrain_api**: enterprise HTTP API for memory capture, skills, graph contracts, context packs, and contextual ingestion.
-- **onebrain_mcp**: agent interface for capture, search, correlation, and context composition.
-- **onebrain_jobs**: background workers and schedulers, starting with graph aggregation.
-- **onebrain_host**: Django, ASGI, URL, settings, and runtime composition.
-- **onebrain_ml**: lightweight machine-learning extensions, starting with memory type classification.
+- **onebrain.interfaces.web**: Django host for the React + TypeScript Material Design web application.
+- **onebrain.interfaces.api**: enterprise HTTP API for memory capture, skills, graph contracts, context packs, and contextual ingestion.
+- **onebrain.interfaces.mcp**: agent interface for capture, search, correlation, and context composition.
+- **onebrain.workers**: background workers and schedulers, starting with graph aggregation.
+- **onebrain.platform**: Django, ASGI, URL, settings, and runtime composition.
+- **onebrain.ml**: lightweight machine-learning extensions, starting with memory type classification.
 - **Graph view**: local visual map of semantic, explicit, and shared-entity correlations.
 - **Calling LLM**: reasoning, interpretation, conflict analysis, and task-specific decisions.
 
@@ -54,24 +54,24 @@ Core responsibilities:
 ```mermaid
 flowchart TB
     subgraph Image["Shared onebrain container image"]
-        Host["onebrain_host<br/>settings, ASGI, health, runtime"]
-        API["onebrain_api<br/>HTTP contracts"]
-        Web["onebrain_web<br/>human presentation"]
-        MCP["onebrain_mcp<br/>MCP tools and auth"]
-        Jobs["onebrain_jobs<br/>scheduled workers"]
-        Core["onebrain_core<br/>domain contracts, ingestion, graph logic"]
-        Infra["onebrain_infra<br/>SQLAlchemy, pgvector, embeddings"]
-        ML["onebrain_ml<br/>memory classification"]
+        Platform["onebrain.platform<br/>settings, ASGI, health, runtime"]
+        API["onebrain.interfaces.api<br/>HTTP contracts"]
+        Web["onebrain.interfaces.web<br/>human presentation"]
+        MCP["onebrain.interfaces.mcp<br/>MCP tools and auth"]
+        Workers["onebrain.workers<br/>scheduled workers"]
+        Core["onebrain.core<br/>domain contracts, ingestion, graph logic"]
+        Infra["onebrain.infrastructure<br/>SQLAlchemy, pgvector, embeddings"]
+        ML["onebrain.ml<br/>memory classification"]
     end
 
-    Host --> API
-    Host --> Web
-    Host --> MCP
-    Host --> Jobs
+    Platform --> API
+    Platform --> Web
+    Platform --> MCP
+    Platform --> Workers
     API --> Core
     Web --> Core
     MCP --> Core
-    Jobs --> Core
+    Workers --> Core
     Core --> Infra
     Infra --> DB["PostgreSQL + pgvector"]
     Infra --> Embeddings["Embedding provider"]
@@ -96,7 +96,14 @@ flowchart LR
 ```text
 .
 +-- backend/
-|   +-- src/                  # Python packages: core, infra, API, Web host, MCP, Jobs, ML
+|   +-- src/onebrain/         # Python product package
+|   |   +-- core/             # Domain contracts, ingestion, graph logic
+|   |   +-- infrastructure/   # SQLAlchemy, pgvector, embeddings
+|   |   +-- platform/         # Django settings, ASGI, URLs, health, runtime
+|   |   +-- interfaces/       # API, Web, and MCP adapters
+|   |   +-- workers/          # Scheduled jobs and management commands
+|   |   +-- ml/               # Classifiers and ranking extensions
+|   |   +-- tools/            # Local operator tooling
 |   +-- tests/                # Python unit and integration tests
 |   +-- migrations/           # Alembic migrations
 |   +-- alembic.ini           # Migration config
@@ -327,15 +334,15 @@ npm run web:typecheck
 ### Graph Aggregation Job
 
 Grouping opportunities detected by the graph can be materialized as aggregate `context` memories.
-The core aggregation logic lives in `onebrain_core`; operational scheduling lives in
-`onebrain_jobs`.
+The core aggregation logic lives in `onebrain.core`; operational scheduling lives in
+`onebrain.workers`.
 
 Jobs use an Onion Ring shape:
 
 - Django management commands are thin edge adapters.
-- `onebrain_jobs.ring` owns execution lifecycle, persisted status, and scheduler callbacks.
+- `onebrain.workers.ring` owns execution lifecycle, persisted status, and scheduler callbacks.
 - Concrete jobs provide config/result snapshots plus `run_once`.
-- Domain work stays in `onebrain_core`.
+- Domain work stays in `onebrain.core`.
 
 Run a one-shot aggregation:
 
@@ -371,7 +378,7 @@ environment-configurable defaults:
 OneBrain classifies imported memories with two layers:
 
 - **Heuristic guardrails**: explicit frontmatter, known paths, skill files, code/config extensions, and other high-confidence signals still win.
-- **ML fallback**: ambiguous text is scored by `onebrain_ml.memory_classification`, a deterministic Naive Bayes classifier trained from seed examples plus accepted/corrected OneBrain memories for `rule`, `preference`, `workflow`, `skill`, `decision`, `pitfall`, `context`, `runbook`, `fact`, and `note`.
+- **ML fallback**: ambiguous text is scored by `onebrain.ml.memory_classification`, a deterministic Naive Bayes classifier trained from seed examples plus accepted/corrected OneBrain memories for `rule`, `preference`, `workflow`, `skill`, `decision`, `pitfall`, `context`, `runbook`, `fact`, and `note`.
 
 The selected classification is stored in each imported memory payload under:
 
@@ -406,7 +413,7 @@ docker compose run --rm onebrain-jobs `
   --json
 ```
 
-The Docker stack mounts `/var/lib/onebrain/ml` as the external `onebrain_ml_artifacts` volume, and API/Web/MCP load
+The Docker stack mounts `/var/lib/onebrain/ml` as the external `onebrain.ml_artifacts` volume, and API/Web/MCP load
 `ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH` from that shared location. The runtime watches the model
 file timestamp, so a newly trained artifact is picked up on the next classification call.
 
@@ -759,7 +766,7 @@ memories. The Docker Compose MCP service maps `C:\DoxieOS\github-private-catalog
 
 ## Local Development Without Docker Services
 
-You can run dependencies in Docker and one host-composed process locally:
+You can run dependencies in Docker and each service surface locally:
 
 ```powershell
 docker compose up -d postgres
@@ -767,7 +774,7 @@ uv sync --dev
 npm install
 npm run web:build
 uv run alembic -c backend/alembic.ini upgrade head
-uv run onebrain-host
+uv run onebrain-api
 ```
 
 Or run separated local surfaces in different terminals:
@@ -823,7 +830,7 @@ External Docker volumes:
 
 - `onebrain_postgres_data`
 - `onebrain_job_status`
-- `onebrain_ml_artifacts`
+- `onebrain.ml_artifacts`
 
 Because these volumes are declared as external in `docker-compose.yml`, normal container restarts,
 `docker compose down`, and project renames do not remove them.

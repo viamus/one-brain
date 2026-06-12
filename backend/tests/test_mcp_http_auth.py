@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from onebrain_mcp.auth import McpApiKeyAuthMiddleware
+from onebrain.interfaces.mcp.auth import McpApiKeyAuthMiddleware
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
