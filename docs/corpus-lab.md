@@ -128,7 +128,7 @@ $env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"lab":"corpus-correlation","source":"github"
 
 uv run onebrain-local-import `
   --docs C:\DoxieOS\training-corpora\agent-rules-books `
-  --api-url http://api.127.0.0.1.sslip.io/api/v1 `
+  --api-url http://localhost:8088/api/v1 `
   --source-type github-corpus `
   --source-ref-prefix github://ciembor/agent-rules-books `
   --skip-codex
@@ -139,7 +139,7 @@ Use `--analyze-only` first when checking a new corpus:
 ```powershell
 uv run onebrain-local-import `
   --docs C:\DoxieOS\training-corpora\agent-rules-books `
-  --api-url http://api.127.0.0.1.sslip.io/api/v1 `
+  --api-url http://localhost:8088/api/v1 `
   --source-type github-corpus `
   --source-ref-prefix github://ciembor/agent-rules-books `
   --skip-codex `
@@ -153,7 +153,7 @@ $env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"lab":"corpus-correlation","source":"github"
 
 uv run onebrain-local-import `
   --docs C:\DoxieOS\training-corpora\awesome-agent-skills-expanded `
-  --api-url http://api.127.0.0.1.sslip.io/api/v1 `
+  --api-url http://localhost:8088/api/v1 `
   --source-type github-corpus `
   --source-ref-prefix github://VoltAgent/awesome-agent-skills-expanded `
   --include-extension .md `
@@ -181,7 +181,7 @@ docker compose run --rm onebrain-jobs `
 Open:
 
 ```text
-http://onebrain.localhost/graph
+http://localhost:8089/graph
 ```
 
 Useful checks after each batch:

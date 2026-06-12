@@ -18,7 +18,7 @@ OneBrain does not use an LLM in its online request path. The service remembers, 
 - Exposes OneBrain MCP over HTTP and stdio for Codex and other MCP clients.
 - Runs graph aggregation and future workers through OneBrain Jobs.
 - Supports API key authentication for deployed HTTP usage.
-- Runs with Docker Compose, with a separate local Traefik proxy stack plus PostgreSQL, Qdrant, migrations, API, Web, MCP, and Jobs services.
+- Runs with Docker Compose, including PostgreSQL, Qdrant, migrations, API, Web, MCP, and Jobs services.
 
 ## Architecture
 
@@ -84,14 +84,9 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Browser["Browser"] --> Proxy["Global Traefik proxy<br/>onebrain.localhost"]
-    Agents["Agents / automations"] --> ApiHost["api.onebrain.localhost"]
-    Codex["Codex MCP client"] --> McpHost["mcp.onebrain.localhost"]
-    ApiHost --> Proxy
-    McpHost --> Proxy
-    Proxy --> WebPort["onebrain-web"]
-    Proxy --> ApiPort["onebrain-api"]
-    Proxy --> McpPort["onebrain-mcp"]
+    Browser["Browser"] --> WebPort["localhost:8089<br/>onebrain-web"]
+    Agents["Agents / automations"] --> ApiPort["localhost:8088<br/>onebrain-api"]
+    Codex["Codex MCP client"] --> McpPort["localhost:8090<br/>onebrain-mcp"]
     Worker["Scheduler"] --> JobsSvc["onebrain-jobs"]
     WebPort --> Shared["Shared core + infra libraries"]
     ApiPort --> Shared
@@ -118,7 +113,6 @@ flowchart LR
 +-- migrations/                # Alembic migrations
 +-- tests/                     # Unit tests
 +-- docker-compose.yml         # PostgreSQL, Qdrant, migrations, API, Web, MCP, Jobs
-+-- docker-compose.traefik.yml # Shared local Traefik proxy and proxy network
 +-- Dockerfile                 # Production container image
 +-- .env.example               # Local configuration template
 +-- CONTRIBUTING.md            # Contribution guide
@@ -140,24 +134,13 @@ Create a local environment file:
 Copy-Item .env.example .env
 ```
 
-Start the shared local proxy once, unless you already have a Traefik container attached to
-`local_proxy`:
-
-```powershell
-docker compose -f docker-compose.traefik.yml up -d
-```
-
-Start the OneBrain stack:
+Start the full stack:
 
 ```powershell
 docker compose up -d --build
 ```
 
-The Traefik compose creates the reusable proxy network and starts:
-
-- `traefik`, the local reverse proxy
-
-The OneBrain compose starts:
+This starts:
 
 - `postgres`
 - `qdrant`
@@ -170,26 +153,16 @@ The OneBrain compose starts:
 Check status:
 
 ```powershell
-docker compose -f docker-compose.traefik.yml ps
 docker compose ps
 ```
 
 Open:
 
-- Web console: `http://onebrain.localhost/`
-- Web graph: `http://onebrain.localhost/graph`
-- API health: `http://api.onebrain.localhost/healthz`
-- API: `http://api.onebrain.localhost/api/v1`
-- MCP HTTP: `http://mcp.onebrain.localhost/mcp`
-- Traefik dashboard: `http://traefik.localhost/dashboard/`
-
-The `.localhost` names are intended for local browser usage. If a CLI tool or resolver does not
-handle wildcard `.localhost` subdomains, Traefik also accepts DNS-based loopback fallbacks:
-
-- Web: `http://onebrain.127.0.0.1.sslip.io/`
-- API: `http://api.127.0.0.1.sslip.io/api/v1`
-- MCP: `http://mcp.127.0.0.1.sslip.io/mcp`
-- Traefik dashboard: `http://traefik.127.0.0.1.sslip.io/dashboard/`
+- Web console: `http://localhost:8089/`
+- Web graph: `http://localhost:8089/graph`
+- API health: `http://localhost:8088/healthz`
+- API: `http://localhost:8088/api/v1`
+- MCP HTTP: `http://localhost:8090/mcp`
 
 Stop the OneBrain stack:
 
@@ -197,25 +170,11 @@ Stop the OneBrain stack:
 docker compose down
 ```
 
-Stop the shared local proxy only when no local stack needs it:
-
-```powershell
-docker compose -f docker-compose.traefik.yml down
-```
-
 OneBrain stores PostgreSQL, Qdrant, job state, and ML artifacts in external Docker volumes by
 default. Use `.\scripts\onebrain-lab-reset.ps1 -Apply` only when you intentionally want to purge the
 local knowledge database.
 
 ## Docker Compose Services
-
-`docker-compose.traefik.yml` owns the shared local proxy:
-
-| Service | Purpose |
-| --- | --- |
-| `traefik` | Local reverse proxy for Web, API, MCP, and dashboard hostnames |
-
-`docker-compose.yml` owns the OneBrain application stack:
 
 | Service | Purpose |
 | --- | --- |
@@ -231,8 +190,6 @@ The Compose file overrides container network URLs automatically:
 
 - Docker services use `postgres:5432`, not `localhost:5432`.
 - Docker services use `qdrant:6333`, not `localhost:6333`.
-- API, Web, and MCP join the external `${ONEBRAIN_PROXY_NETWORK:-local_proxy}` network so
-  a shared Traefik can route friendly local hostnames.
 - The API, MCP, and Jobs services mount `C:\DoxieOS\github-private-catalog` as
   `/mnt/github-private-catalog` for private catalog ingestion and MCP file imports.
 
@@ -247,12 +204,9 @@ Important settings:
 ```env
 ONEBRAIN_ENVIRONMENT=local
 ONEBRAIN_API_KEYS=
-ONEBRAIN_PROXY_PORT=80
-ONEBRAIN_PROXY_NETWORK=local_proxy
-ONEBRAIN_WEB_HOST=onebrain.localhost
-ONEBRAIN_API_HOST=api.onebrain.localhost
-ONEBRAIN_MCP_HOST=mcp.onebrain.localhost
-ONEBRAIN_TRAEFIK_HOST=traefik.localhost
+ONEBRAIN_API_PORT=8088
+ONEBRAIN_WEB_PORT=8089
+ONEBRAIN_MCP_PORT=8090
 ONEBRAIN_MEMORY_CLASSIFIER_MODEL_PATH=artifacts/memory-classifier.json
 ONEBRAIN_DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE=67108864
 ONEBRAIN_MCP_REQUIRE_API_KEY=true
@@ -330,14 +284,12 @@ For client configuration, set a local client-only environment variable, for exam
 
 ## Service Surfaces
 
-The split services use the same core and infra packages, while the shared Traefik stack exposes
-friendly local hostnames:
+The split services use the same core and infra packages, but expose different process surfaces:
 
 ```text
-Web:     http://onebrain.localhost
-API:     http://api.onebrain.localhost
-MCP:     http://mcp.onebrain.localhost
-Traefik: http://traefik.localhost
+API:  http://localhost:8088
+Web:  http://localhost:8089
+MCP:  http://localhost:8090
 ```
 
 API routes:
@@ -496,7 +448,7 @@ container paths. The Compose stack mounts `C:\DoxieOS\github-private-catalog` as
 $env:ONEBRAIN_IMPORT_SCOPE_JSON = '{"organization":"abinbev","catalog":"private-engineering-catalog"}'
 uv run onebrain-local-import `
   --docs C:\DoxieOS\github-private-catalog\libraries\ambevtech-developer-memory `
-  --api-url http://api.onebrain.localhost/api/v1 `
+  --api-url http://localhost:8088/api/v1 `
   --api-key $env:ONEBRAIN_MCP_CLIENT_KEY `
   --source-type private-catalog-library `
   --source-ref-prefix catalog://private/libraries/ambevtech-developer-memory `
@@ -533,7 +485,7 @@ $body = @{
   }
 } | ConvertTo-Json -Depth 20
 
-$plan = Invoke-RestMethod http://api.onebrain.localhost/api/v1/ingestion/analyze `
+$plan = Invoke-RestMethod http://localhost:8088/api/v1/ingestion/analyze `
   -Headers $headers `
   -Method Post `
   -ContentType "application/json" `
@@ -544,7 +496,7 @@ Commit the plan:
 
 ```powershell
 $commitBody = @{ plan = $plan; dry_run = $false } | ConvertTo-Json -Depth 100
-Invoke-RestMethod http://api.onebrain.localhost/api/v1/ingestion/commit `
+Invoke-RestMethod http://localhost:8088/api/v1/ingestion/commit `
   -Headers $headers `
   -Method Post `
   -ContentType "application/json" `
@@ -578,7 +530,7 @@ $body = @{
   }
 } | ConvertTo-Json -Depth 8
 
-Invoke-RestMethod http://api.onebrain.localhost/api/v1/memories `
+Invoke-RestMethod http://localhost:8088/api/v1/memories `
   -Method Post `
   -ContentType "application/json" `
   -Body $body
@@ -598,7 +550,7 @@ $body = @{
   version = "1.0.0"
 } | ConvertTo-Json -Depth 8
 
-Invoke-RestMethod http://api.onebrain.localhost/api/v1/skills `
+Invoke-RestMethod http://localhost:8088/api/v1/skills `
   -Method Post `
   -ContentType "application/json" `
   -Body $body
@@ -615,7 +567,7 @@ $body = @{
   }
 } | ConvertTo-Json -Depth 8
 
-Invoke-RestMethod http://api.onebrain.localhost/api/v1/search `
+Invoke-RestMethod http://localhost:8088/api/v1/search `
   -Method Post `
   -ContentType "application/json" `
   -Body $body
@@ -630,7 +582,7 @@ $body = @{
   max_tokens = 1200
 } | ConvertTo-Json -Depth 8
 
-Invoke-RestMethod http://api.onebrain.localhost/api/v1/context `
+Invoke-RestMethod http://localhost:8088/api/v1/context `
   -Method Post `
   -ContentType "application/json" `
   -Body $body
@@ -639,7 +591,7 @@ Invoke-RestMethod http://api.onebrain.localhost/api/v1/context `
 Open the correlation graph UI:
 
 ```text
-http://onebrain.localhost/graph
+http://localhost:8089/graph
 ```
 
 The visual page loads its correlation data through a local `/graph/data` route. The protected
@@ -656,10 +608,9 @@ Both modes use the OneBrain application service. HTTP MCP is hosted by `onebrain
 
 ### HTTP MCP
 
-Start the shared proxy and the Docker stack:
+Start the Docker stack:
 
 ```powershell
-docker compose -f docker-compose.traefik.yml up -d
 docker compose up -d --build
 ```
 
@@ -673,7 +624,7 @@ ONEBRAIN_MCP_REQUIRE_API_KEY=true
 The MCP HTTP endpoint is:
 
 ```text
-http://mcp.onebrain.localhost/mcp
+http://localhost:8090/mcp
 ```
 
 Recommended Codex config:
@@ -681,7 +632,7 @@ Recommended Codex config:
 ```toml
 [mcp_servers.onebrain]
 type = "http"
-url = "http://mcp.onebrain.localhost/mcp"
+url = "http://localhost:8090/mcp"
 bearer_token_env_var = "ONEBRAIN_MCP_CLIENT_KEY"
 ```
 
@@ -874,7 +825,6 @@ Backup expectations for production:
 - Do not expose PostgreSQL or Qdrant publicly.
 - Put HTTP behind TLS and a trusted ingress.
 - Enable platform logs and metrics.
-- Run `docker compose -f docker-compose.traefik.yml up -d` before app deployments that use the shared local proxy network.
 - Run `docker compose up -d --build` only after migrations are reviewed.
 - Keep `.env` out of Git.
 
@@ -892,13 +842,6 @@ docker compose logs -f migrate
 ```
 
 If MCP cannot connect to Postgres inside Docker, verify the Compose override uses `postgres:5432`.
-
-If Docker reports that `local_proxy` was declared as external but could not be found, start the
-shared proxy stack first:
-
-```powershell
-docker compose -f docker-compose.traefik.yml up -d
-```
 
 If Qdrant vector size errors appear, the existing collection was created with a different vector size. Change `ONEBRAIN_QDRANT_COLLECTION` or recreate the Qdrant volume.
 
