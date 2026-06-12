@@ -34,6 +34,63 @@ Those values live only for the current terminal session. To persist a value for 
 
 Open a new terminal after setting persistent variables.
 
+## Codex Desktop Or Local Codex
+
+For local Codex runs, there is no plugin-specific secret upload step. Put the real values in the operating system environment, then let Codex forward only the variables the harvest needs to spawned commands.
+
+On Windows, set user-level variables:
+
+```powershell
+[Environment]::SetEnvironmentVariable("ONEBRAIN_API_URL", "http://127.0.0.1:8088/api/v1", "User")
+[Environment]::SetEnvironmentVariable("ONEBRAIN_API_KEY", "<onebrain-key>", "User")
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN", "<github-token>", "User")
+[Environment]::SetEnvironmentVariable("AZURE_DEVOPS_PAT", "<azure-devops-pat>", "User")
+[Environment]::SetEnvironmentVariable("JIRA_EMAIL", "person@example.com", "User")
+[Environment]::SetEnvironmentVariable("JIRA_API_TOKEN", "<jira-api-token>", "User")
+```
+
+Restart Codex after changing user-level environment variables so the app process can see them.
+
+Codex may filter variables with names containing `KEY`, `SECRET`, or `TOKEN` before passing them to shell commands. If the harvest script cannot see the variables, configure the shell environment policy in `%USERPROFILE%\.codex\config.toml` or in a trusted project `.codex/config.toml`:
+
+```toml
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+include_only = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "WINDIR",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "ONEBRAIN_API_URL",
+  "ONEBRAIN_API_KEY",
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "AZURE_DEVOPS_PAT",
+  "JIRA_EMAIL",
+  "JIRA_API_TOKEN"
+]
+```
+
+Do not put secret values in `config.toml` unless the machine is explicitly treated as a private secret store. Prefer storing only variable names in Codex and the values in the OS or a secrets manager.
+
+For MCP servers, configure the MCP to read a variable name, for example:
+
+```toml
+[mcp_servers.onebrain]
+url = "http://localhost:8090/mcp"
+bearer_token_env_var = "ONEBRAIN_API_KEY"
+```
+
+That keeps the key outside the config file while still letting Codex authenticate the MCP.
+
+## Codex Cloud
+
+For Codex cloud tasks, configure variables in Codex environment settings for the selected repository/environment. Use environment variables for values the agent phase must read while running the harvest. Use secrets only for setup-time values, because cloud secrets are removed before the agent phase.
+
 ## Source Config Overrides
 
 Provider targets may override the variable names through `token_env` or `email_env`. The config stores only the environment variable name:
@@ -58,7 +115,7 @@ Provider targets may override the variable names through `token_env` or `email_e
 
 ## Codex And MCP
 
-Codex skills inherit environment variables from the process that runs the command. For Azure DevOps inside Codex, prefer the configured `mcp__mcp_azuredevops` tools. The MCP server owns its own credential configuration, so this plugin should not duplicate that secret unless the REST fallback is required.
+Codex skills inherit environment variables from the process that runs the command, subject to Codex shell environment policy. For Azure DevOps inside Codex, prefer the configured `mcp__mcp_azuredevops` tools. The MCP server owns its own credential configuration, so this plugin should not duplicate that secret unless the REST fallback is required.
 
 ## CI Or Cloud Runners
 
