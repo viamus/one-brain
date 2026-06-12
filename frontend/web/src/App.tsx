@@ -1,13 +1,17 @@
 import {
   AccountTree,
   Analytics,
+  BubbleChart,
   Hub,
   JoinInner,
+  Layers,
   Refresh,
   Search,
   Storage,
   Timeline,
-  Tune
+  Tune,
+  Visibility,
+  VisibilityOff
 } from "@mui/icons-material";
 import {
   Alert,
@@ -32,6 +36,8 @@ import {
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Toolbar,
   Tooltip,
   Typography
@@ -42,7 +48,6 @@ import {
   Handle,
   MarkerType,
   MiniMap,
-  Panel,
   Position,
   ReactFlow,
   useEdgesState,
@@ -51,7 +56,15 @@ import {
   type Node,
   type NodeProps
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode
+} from "react";
 import "@xyflow/react/dist/style.css";
 
 import { fetchGraph, fetchJobStatus, type GraphQuery } from "./api";
@@ -229,8 +242,8 @@ function GraphPanel(props: GraphPanelProps) {
   ];
 
   return (
-    <Grid container spacing={2.5}>
-      <Grid size={{ xs: 12, lg: 3 }}>
+    <Box className="graph-workbench">
+      <Box className="graph-query-column">
         <Stack spacing={2}>
           <Card>
             <CardContent>
@@ -317,21 +330,21 @@ function GraphPanel(props: GraphPanelProps) {
             </CardContent>
           </Card>
         </Stack>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 6 }}>
+      </Box>
+      <Box className="graph-stage-column">
         <Card className="graph-card">
           <LiveGraph graph={props.graph} selection={selection} onSelectionChange={setSelection} />
         </Card>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 3 }}>
+      </Box>
+      <Box className="graph-insights-column">
         <GraphInsights
           graph={props.graph}
           selection={selection}
           onSelectNode={(id) => setSelection({ type: "node", id })}
           onSelectEdge={(id) => setSelection({ type: "edge", id })}
         />
-      </Grid>
-    </Grid>
+      </Box>
+    </Box>
   );
 }
 
@@ -366,12 +379,15 @@ function NumberSlider({ label, value, min, max, step, onChange }: NumberSliderPr
 }
 
 type EdgeKind = "vector" | "correlation" | "entity" | "explicit" | "other";
+type LayoutMode = "synapse" | "layers" | "constellation";
+type EdgeDensity = "calm" | "balanced" | "full";
 type FlowNodeData = {
   label: string;
   node: GraphNode;
   role: string;
   accent: string;
   groupLabels: string[];
+  dimmed: boolean;
   [key: string]: unknown;
 };
 type FlowEdgeData = {
@@ -388,6 +404,18 @@ const edgeLegend: Record<EdgeKind, { label: string; color: string; icon: ReactEl
   entity: { label: "Entity", color: "#b7791f", icon: <Hub fontSize="small" /> },
   explicit: { label: "Explicit", color: "#d04437", icon: <AccountTree fontSize="small" /> },
   other: { label: "Other", color: "#64748b", icon: <AccountTree fontSize="small" /> }
+};
+
+const layoutOptions: Record<LayoutMode, { label: string; icon: ReactElement }> = {
+  synapse: { label: "Synapse", icon: <Hub fontSize="small" /> },
+  layers: { label: "Layers", icon: <Layers fontSize="small" /> },
+  constellation: { label: "Orbit", icon: <BubbleChart fontSize="small" /> }
+};
+
+const edgeDensityOptions: Record<EdgeDensity, { label: string; maxTotal: number; maxPerNode: number }> = {
+  calm: { label: "Calm", maxTotal: 90, maxPerNode: 3 },
+  balanced: { label: "Balanced", maxTotal: 160, maxPerNode: 6 },
+  full: { label: "Full", maxTotal: Number.POSITIVE_INFINITY, maxPerNode: Number.POSITIVE_INFINITY }
 };
 
 const graphNodeTypes = {
@@ -410,33 +438,64 @@ function LiveGraph({
     explicit: true,
     other: true
   });
-  const initialNodes = useMemo(() => buildFlowNodes(graph), [graph]);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("synapse");
+  const [edgeDensity, setEdgeDensity] = useState<EdgeDensity>("calm");
+  const [showEdgeLabels, setShowEdgeLabels] = useState(false);
+  const layoutRef = useRef(layoutMode);
+  const graphSignature = useMemo(
+    () => `${graph.query || ""}:${graph.nodes.map((node) => node.id).join("|")}`,
+    [graph.nodes, graph.query]
+  );
+  const graphSignatureRef = useRef(graphSignature);
+  const selectionFocus = useMemo(() => selectionNeighborhood(selection, graph.edges), [selection, graph.edges]);
+  const visibleGraphEdges = useMemo(
+    () =>
+      limitEdgesByDensity(
+        graph.edges.filter((edge) => enabledEdges[edgeKind(edge)]),
+        edgeDensity,
+        selection
+      ),
+    [edgeDensity, enabledEdges, graph.edges, selection]
+  );
+  const initialNodes = useMemo(() => buildFlowNodes(graph, layoutMode), [graph, layoutMode]);
   const initialEdges = useMemo(
-    () => buildFlowEdges(graph.edges).filter((edge) => enabledEdges[edge.data?.kind || "other"]),
-    [enabledEdges, graph.edges]
+    () => buildFlowEdges(visibleGraphEdges, showEdgeLabels),
+    [showEdgeLabels, visibleGraphEdges]
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<MemoryFlowNode>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<MemoryFlowEdge>(initialEdges);
 
   useEffect(() => {
+    const preservePositions =
+      layoutRef.current === layoutMode && graphSignatureRef.current === graphSignature;
+    layoutRef.current = layoutMode;
+    graphSignatureRef.current = graphSignature;
     setNodes((currentNodes) => {
-      const currentPositions = new Map(currentNodes.map((node) => [node.id, node.position]));
+      const currentPositions = preservePositions
+        ? new Map(currentNodes.map((node) => [node.id, node.position]))
+        : new Map<string, { x: number; y: number }>();
       return initialNodes.map((node) => ({
         ...node,
         position: currentPositions.get(node.id) || node.position,
-        selected: selection?.type === "node" && selection.id === node.id
+        selected: selection?.type === "node" && selection.id === node.id,
+        data: {
+          ...node.data,
+          dimmed: isNodeDimmed(node.id, selection, selectionFocus)
+        }
       }));
     });
-  }, [initialNodes, selection, setNodes]);
+  }, [graphSignature, initialNodes, layoutMode, selection, selectionFocus, setNodes]);
 
   useEffect(() => {
     setEdges(
       initialEdges.map((edge) => ({
         ...edge,
-        selected: selection?.type === "edge" && selection.id === edge.id
+        selected: selection?.type === "edge" && selection.id === edge.id,
+        zIndex: selectionFocus.edgeIds.has(edge.id) ? 4 : 0,
+        style: focusedEdgeStyle(edge, selection, selectionFocus)
       }))
     );
-  }, [initialEdges, selection, setEdges]);
+  }, [initialEdges, selection, selectionFocus, setEdges]);
 
   const toggleEdgeKind = (kind: EdgeKind) => {
     setEnabledEdges((current) => ({ ...current, [kind]: !current[kind] }));
@@ -455,34 +514,64 @@ function LiveGraph({
   }
 
   return (
-    <ReactFlow
-      className="live-graph"
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={graphNodeTypes}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={(_, node) => onSelectionChange({ type: "node", id: node.id })}
-      onEdgeClick={(_, edge) => onSelectionChange({ type: "edge", id: edge.id })}
-      onPaneClick={() => onSelectionChange(null)}
-      fitView
-      fitViewOptions={{ padding: 0.22, maxZoom: 1.25 }}
-      minZoom={0.12}
-      maxZoom={1.8}
-    >
-      <Background color="#dbe4ef" gap={28} />
-      <Controls showInteractive={false} />
-      <MiniMap
-        pannable
-        zoomable
-        nodeBorderRadius={8}
-        nodeColor={(node) => (node.data as FlowNodeData).accent}
-      />
-      <Panel position="top-left" className="flow-panel">
-        <Stack spacing={1}>
+    <Box className="live-graph-shell">
+      <Box className="flow-panel">
+        <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1.2}>
           <Stack direction="row" spacing={1} alignItems="center">
             <AccountTree fontSize="small" color="primary" />
             <Typography variant="subtitle2">Live vector graph</Typography>
+          </Stack>
+          <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.75}>
+            <Typography variant="caption" className="flow-panel-label">
+              Layout
+            </Typography>
+            <ToggleButtonGroup
+              value={layoutMode}
+              exclusive
+              size="small"
+              onChange={(_, value: LayoutMode | null) => value && setLayoutMode(value)}
+              aria-label="Graph layout"
+            >
+              {(Object.keys(layoutOptions) as LayoutMode[]).map((mode) => (
+                <ToggleButton key={mode} value={mode} aria-label={`${layoutOptions[mode].label} layout`}>
+                  {layoutOptions[mode].icon}
+                  <span>{layoutOptions[mode].label}</span>
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Stack>
+          <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.75}>
+            <Typography variant="caption" className="flow-panel-label">
+              Density
+            </Typography>
+            <ToggleButtonGroup
+              value={edgeDensity}
+              exclusive
+              size="small"
+              onChange={(_, value: EdgeDensity | null) => value && setEdgeDensity(value)}
+              aria-label="Edge density"
+            >
+              {(Object.keys(edgeDensityOptions) as EdgeDensity[]).map((density) => (
+                <ToggleButton
+                  key={density}
+                  value={density}
+                  aria-label={`${edgeDensityOptions[density].label} edge density`}
+                >
+                  {edgeDensityOptions[density].label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+            <Tooltip title={showEdgeLabels ? "Hide edge labels" : "Show edge labels"}>
+              <ToggleButton
+                value="labels"
+                selected={showEdgeLabels}
+                onChange={() => setShowEdgeLabels((current) => !current)}
+                size="small"
+                aria-label="Toggle edge labels"
+              >
+                {showEdgeLabels ? <Visibility fontSize="small" /> : <VisibilityOff fontSize="small" />}
+              </ToggleButton>
+            </Tooltip>
           </Stack>
           <Stack direction="row" flexWrap="wrap" gap={0.5}>
             {(Object.keys(edgeLegend) as EdgeKind[]).map((kind) => (
@@ -501,16 +590,48 @@ function LiveGraph({
               />
             ))}
           </Stack>
+          <Typography variant="caption" className="flow-panel-meter">
+            {visibleGraphEdges.length} / {graph.edges.length} links visible
+          </Typography>
         </Stack>
-      </Panel>
-    </ReactFlow>
+      </Box>
+      <Box className="live-graph-canvas">
+        <ReactFlow
+          key={`graph-${layoutMode}-${graph.query || "all"}-${graph.nodes.length}`}
+          className="live-graph"
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={graphNodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={(_, node) => onSelectionChange({ type: "node", id: node.id })}
+          onEdgeClick={(_, edge) => onSelectionChange({ type: "edge", id: edge.id })}
+          onPaneClick={() => onSelectionChange(null)}
+          defaultViewport={{ x: 96, y: 24, zoom: 0.58 }}
+          minZoom={0.16}
+          maxZoom={1.7}
+          onlyRenderVisibleElements
+        >
+          <Background color="#dbe4ef" gap={28} />
+          <Controls showInteractive={false} />
+          <MiniMap
+            pannable
+            zoomable
+            nodeBorderRadius={8}
+            nodeColor={(node) => (node.data as FlowNodeData).accent}
+          />
+        </ReactFlow>
+      </Box>
+    </Box>
   );
 }
 
 function MemoryGraphNode({ data, selected }: NodeProps<MemoryFlowNode>) {
   return (
     <Box
-      className={`flow-node ${selected ? "flow-node-selected" : ""}`}
+      className={`flow-node ${selected ? "flow-node-selected" : ""} ${
+        data.dimmed ? "flow-node-dimmed" : ""
+      }`}
       style={{ borderColor: data.accent }}
     >
       <Handle type="target" position={Position.Left} />
@@ -701,70 +822,70 @@ function EmptyText({ children }: { children: ReactNode }) {
   );
 }
 
-function buildFlowNodes(graph: GraphResponse): MemoryFlowNode[] {
-  const memberships = groupMemberships(graph);
-  const centroids = new Set(
-    graph.grouping_opportunities
-      .map((group) => group.centroid_node_id)
-      .filter((id): id is string => Boolean(id))
-  );
-  const centroidNodes = graph.nodes.filter(
-    (node) => centroids.has(node.id) || nodeRole(node).includes("centroid")
-  );
-  const memoryNodes = graph.nodes.filter(
-    (node) => node.node_type !== "entity" && !centroidNodes.some((centroid) => centroid.id === node.id)
-  );
-  const entityNodes = graph.nodes.filter((node) => node.node_type === "entity");
+const ungroupedGroupId = "__ungrouped__";
 
-  const toFlowNode = (
-    node: GraphNode,
-    index: number,
-    count: number,
-    ring: number
-  ): MemoryFlowNode => {
+type LayoutContext = {
+  memberships: Map<string, string[]>;
+  centroidIds: Set<string>;
+  primaryGroupByNode: Map<string, string>;
+  nodesByGroup: Map<string, GraphNode[]>;
+  groupOrder: string[];
+  laneY: Map<string, number>;
+  laneHeight: Map<string, number>;
+};
+
+type SelectionFocus = {
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+};
+
+function buildFlowNodes(graph: GraphResponse, layoutMode: LayoutMode): MemoryFlowNode[] {
+  const context = buildLayoutContext(graph);
+  return graph.nodes.map((node, index) => {
     const role = nodeRole(node);
-    const isCentroid = ring === 0;
+    const isCentroid = isCentroidNode(node, context);
     return {
       id: node.id,
       type: "memory",
-      position: ringPosition(index, count, ring),
+      position: graphPosition(node, index, graph, context, layoutMode),
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: node.label,
         node,
         role,
         accent: isCentroid ? "#c2410c" : nodeAccent(node),
-        groupLabels: memberships.get(node.id) || []
+        groupLabels: context.memberships.get(node.id) || [],
+        dimmed: false
       }
     };
-  };
-
-  return [
-    ...centroidNodes.map((node, index) => toFlowNode(node, index, centroidNodes.length, 0)),
-    ...memoryNodes.map((node, index) => toFlowNode(node, index, memoryNodes.length, 1)),
-    ...entityNodes.map((node, index) => toFlowNode(node, index, entityNodes.length, 2))
-  ];
+  });
 }
 
-function buildFlowEdges(edges: GraphEdge[]): MemoryFlowEdge[] {
+function buildFlowEdges(edges: GraphEdge[], showLabels: boolean): MemoryFlowEdge[] {
   return edges.map((edge) => {
     const kind = edgeKind(edge);
     const legend = edgeLegend[kind];
+    const strokeWidth = Math.max(1.15, Math.min(4.2, 1 + edge.weight * 2.2));
     return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      label: edge.label || edge.edge_type,
+      label: showLabels ? edge.label || edge.edge_type : undefined,
       type: "smoothstep",
-      animated: kind === "vector",
+      animated: kind === "vector" && edge.weight >= 0.5,
       markerEnd: {
         type: MarkerType.ArrowClosed,
         color: legend.color
       },
       style: {
         stroke: legend.color,
-        strokeWidth: Math.max(1.25, Math.min(5, 1 + edge.weight * 2.5)),
-        opacity: kind === "other" ? 0.42 : 0.72
+        strokeWidth,
+        opacity: kind === "other" ? 0.32 : 0.58
       },
+      labelBgPadding: [4, 3],
+      labelBgBorderRadius: 4,
+      labelBgStyle: { fill: "#ffffff", fillOpacity: 0.9 },
       labelStyle: {
         fill: "#334155",
         fontWeight: 600,
@@ -773,6 +894,179 @@ function buildFlowEdges(edges: GraphEdge[]): MemoryFlowEdge[] {
       data: { edge, kind }
     };
   });
+}
+
+function buildLayoutContext(graph: GraphResponse): LayoutContext {
+  const memberships = groupMemberships(graph);
+  const centroidIds = new Set(
+    graph.grouping_opportunities
+      .map((group) => group.centroid_node_id)
+      .filter((id): id is string => Boolean(id))
+  );
+  const groups = [...graph.grouping_opportunities].sort((left, right) => right.score - left.score);
+  const primaryGroupByNode = new Map<string, string>();
+  const nodesByGroup = new Map<string, GraphNode[]>();
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  for (const group of groups) {
+    nodesByGroup.set(group.id, []);
+    if (group.centroid_node_id) {
+      primaryGroupByNode.set(group.centroid_node_id, group.id);
+    }
+    for (const nodeId of group.member_node_ids) {
+      if (!primaryGroupByNode.has(nodeId)) {
+        primaryGroupByNode.set(nodeId, group.id);
+      }
+    }
+  }
+
+  nodesByGroup.set(ungroupedGroupId, []);
+  for (const node of graph.nodes) {
+    const groupId = primaryGroupByNode.get(node.id) || ungroupedGroupId;
+    primaryGroupByNode.set(node.id, groupId);
+    nodesByGroup.set(groupId, [...(nodesByGroup.get(groupId) || []), node]);
+  }
+
+  const orderedGroupIds = groups
+    .map((group) => group.id)
+    .filter((groupId) => (nodesByGroup.get(groupId) || []).length > 0);
+  const lateGroupIds = [...nodesByGroup.entries()]
+    .filter(
+      ([groupId, nodes]) =>
+        groupId !== ungroupedGroupId && nodes.length > 0 && !orderedGroupIds.includes(groupId)
+    )
+    .map(([groupId]) => groupId);
+  const groupOrder = [
+    ...orderedGroupIds,
+    ...lateGroupIds,
+    ...((nodesByGroup.get(ungroupedGroupId) || []).length > 0 ? [ungroupedGroupId] : [])
+  ];
+  const laneY = new Map<string, number>();
+  const laneHeight = new Map<string, number>();
+  let currentY = 80;
+  for (const groupId of groupOrder) {
+    const nodes = nodesByGroup.get(groupId) || [];
+    const nonCentroidCount = nodes.filter((node) => !centroidIds.has(node.id)).length;
+    const height = Math.max(300, Math.ceil(Math.max(1, nonCentroidCount) / 3) * 116 + 170);
+    laneY.set(groupId, currentY);
+    laneHeight.set(groupId, height);
+    currentY += height + 88;
+  }
+
+  for (const nodeId of [...primaryGroupByNode.keys()]) {
+    if (!nodesById.has(nodeId)) {
+      primaryGroupByNode.delete(nodeId);
+    }
+  }
+
+  return { memberships, centroidIds, primaryGroupByNode, nodesByGroup, groupOrder, laneY, laneHeight };
+}
+
+function graphPosition(
+  node: GraphNode,
+  index: number,
+  graph: GraphResponse,
+  context: LayoutContext,
+  layoutMode: LayoutMode
+) {
+  if (layoutMode === "layers") {
+    return layerPosition(node, graph, context);
+  }
+  if (layoutMode === "constellation") {
+    return constellationPosition(node, index, graph, context);
+  }
+  return synapsePosition(node, context);
+}
+
+function synapsePosition(node: GraphNode, context: LayoutContext) {
+  const groupId = resolvedGroupId(node, context);
+  const laneStart = context.laneY.get(groupId) || 0;
+  const laneHeight = context.laneHeight.get(groupId) || 320;
+  const groupNodes = context.nodesByGroup.get(groupId) || [];
+  const isCentroid = isCentroidNode(node, context);
+  if (isCentroid) {
+    const centroidPeers = groupNodes.filter((peer) => isCentroidNode(peer, context));
+    const centroidIndex = Math.max(0, centroidPeers.findIndex((peer) => peer.id === node.id));
+    const centroidOffset = (centroidIndex - (centroidPeers.length - 1) / 2) * 96;
+    return { x: 20, y: laneStart + laneHeight / 2 - 48 + centroidOffset };
+  }
+
+  const isEntity = node.node_type === "entity";
+  const lanePeers = groupNodes.filter(
+    (peer) => peer.node_type === node.node_type && !isCentroidNode(peer, context)
+  );
+  const peerIndex = Math.max(0, lanePeers.findIndex((peer) => peer.id === node.id));
+  const column = peerIndex % (isEntity ? 2 : 3);
+  const row = Math.floor(peerIndex / (isEntity ? 2 : 3));
+
+  return {
+    x: isEntity ? 980 + column * 240 : 310 + column * 230,
+    y: laneStart + 44 + row * 112 + (isEntity ? 34 : 0)
+  };
+}
+
+function resolvedGroupId(node: GraphNode, context: LayoutContext) {
+  const primaryGroup = context.primaryGroupByNode.get(node.id);
+  if (primaryGroup && context.laneY.has(primaryGroup)) {
+    return primaryGroup;
+  }
+  if (context.laneY.has(ungroupedGroupId)) {
+    return ungroupedGroupId;
+  }
+  return context.groupOrder[0] || ungroupedGroupId;
+}
+
+function layerPosition(node: GraphNode, graph: GraphResponse, context: LayoutContext) {
+  const isCentroid = isCentroidNode(node, context);
+  const layer = isCentroid ? 0 : node.node_type === "entity" ? 2 : 1;
+  const layerNodes = graph.nodes.filter((peer) => {
+    if (layer === 0) {
+      return isCentroidNode(peer, context);
+    }
+    if (layer === 2) {
+      return peer.node_type === "entity" && !isCentroidNode(peer, context);
+    }
+    return peer.node_type !== "entity" && !isCentroidNode(peer, context);
+  });
+  const index = Math.max(0, layerNodes.findIndex((peer) => peer.id === node.id));
+  return {
+    x: layer * 420,
+    y: index * 118
+  };
+}
+
+function constellationPosition(
+  node: GraphNode,
+  index: number,
+  graph: GraphResponse,
+  context: LayoutContext
+) {
+  const centroidNodes = graph.nodes.filter((current) => isCentroidNode(current, context));
+  const memoryNodes = graph.nodes.filter(
+    (current) => current.node_type !== "entity" && !isCentroidNode(current, context)
+  );
+  const entityNodes = graph.nodes.filter(
+    (current) => current.node_type === "entity" && !isCentroidNode(current, context)
+  );
+  if (isCentroidNode(node, context)) {
+    return ringPosition(
+      Math.max(0, centroidNodes.findIndex((current) => current.id === node.id)),
+      centroidNodes.length,
+      0
+    );
+  }
+  if (node.node_type === "entity") {
+    return ringPosition(
+      Math.max(0, entityNodes.findIndex((current) => current.id === node.id)),
+      entityNodes.length,
+      2
+    );
+  }
+  return ringPosition(
+    Math.max(0, memoryNodes.findIndex((current) => current.id === node.id)),
+    memoryNodes.length || graph.nodes.length,
+    index === -1 ? 1 : 1
+  );
 }
 
 function ringPosition(index: number, total: number, ring: number) {
@@ -792,6 +1086,110 @@ function ringPosition(index: number, total: number, ring: number) {
   };
 }
 
+function limitEdgesByDensity(edges: GraphEdge[], density: EdgeDensity, selection: GraphSelection) {
+  const option = edgeDensityOptions[density];
+  if (density === "full" || edges.length <= option.maxTotal) {
+    return edges;
+  }
+
+  const selectedEdges = new Set<string>();
+  if (selection?.type === "edge") {
+    selectedEdges.add(selection.id);
+  }
+  if (selection?.type === "node") {
+    for (const edge of edges) {
+      if (edge.source === selection.id || edge.target === selection.id) {
+        selectedEdges.add(edge.id);
+      }
+    }
+  }
+
+  const selectedFirst = [...edges].sort((left, right) => {
+    const leftSelected = selectedEdges.has(left.id) ? 1 : 0;
+    const rightSelected = selectedEdges.has(right.id) ? 1 : 0;
+    if (leftSelected !== rightSelected) {
+      return rightSelected - leftSelected;
+    }
+    return edgeScore(right) - edgeScore(left);
+  });
+
+  const visible: GraphEdge[] = [];
+  const degree = new Map<string, number>();
+  const added = new Set<string>();
+
+  for (const edge of selectedFirst) {
+    const forced = selectedEdges.has(edge.id);
+    const sourceDegree = degree.get(edge.source) || 0;
+    const targetDegree = degree.get(edge.target) || 0;
+    if (!forced && (visible.length >= option.maxTotal || sourceDegree >= option.maxPerNode || targetDegree >= option.maxPerNode)) {
+      continue;
+    }
+    visible.push(edge);
+    added.add(edge.id);
+    degree.set(edge.source, sourceDegree + 1);
+    degree.set(edge.target, targetDegree + 1);
+  }
+
+  return edges.filter((edge) => added.has(edge.id));
+}
+
+function edgeScore(edge: GraphEdge) {
+  const kindBonus: Record<EdgeKind, number> = {
+    explicit: 0.55,
+    entity: 0.42,
+    correlation: 0.32,
+    vector: 0.24,
+    other: 0
+  };
+  return edge.weight + (edge.confidence || 0) * 0.45 + kindBonus[edgeKind(edge)];
+}
+
+function selectionNeighborhood(selection: GraphSelection, edges: GraphEdge[]): SelectionFocus {
+  const nodeIds = new Set<string>();
+  const edgeIds = new Set<string>();
+  if (!selection) {
+    return { nodeIds, edgeIds };
+  }
+  if (selection.type === "edge") {
+    const edge = edges.find((current) => current.id === selection.id);
+    if (edge) {
+      edgeIds.add(edge.id);
+      nodeIds.add(edge.source);
+      nodeIds.add(edge.target);
+    }
+    return { nodeIds, edgeIds };
+  }
+
+  nodeIds.add(selection.id);
+  for (const edge of edges) {
+    if (edge.source === selection.id || edge.target === selection.id) {
+      edgeIds.add(edge.id);
+      nodeIds.add(edge.source);
+      nodeIds.add(edge.target);
+    }
+  }
+  return { nodeIds, edgeIds };
+}
+
+function isNodeDimmed(nodeId: string, selection: GraphSelection, focus: SelectionFocus) {
+  return Boolean(selection && focus.nodeIds.size > 0 && !focus.nodeIds.has(nodeId));
+}
+
+function focusedEdgeStyle(edge: MemoryFlowEdge, selection: GraphSelection, focus: SelectionFocus) {
+  const baseStyle = edge.style || {};
+  if (!selection) {
+    return baseStyle;
+  }
+  const isFocused = focus.edgeIds.has(edge.id);
+  const baseOpacity = typeof baseStyle.opacity === "number" ? baseStyle.opacity : 0.55;
+  const baseWidth = typeof baseStyle.strokeWidth === "number" ? baseStyle.strokeWidth : 1.5;
+  return {
+    ...baseStyle,
+    opacity: isFocused ? Math.min(0.92, baseOpacity + 0.26) : 0.08,
+    strokeWidth: isFocused ? baseWidth + 1.25 : baseWidth
+  };
+}
+
 function groupMemberships(graph: GraphResponse) {
   const memberships = new Map<string, string[]>();
   for (const group of graph.grouping_opportunities) {
@@ -800,6 +1198,10 @@ function groupMemberships(graph: GraphResponse) {
     }
   }
   return memberships;
+}
+
+function isCentroidNode(node: GraphNode, context: LayoutContext) {
+  return context.centroidIds.has(node.id) || nodeRole(node).includes("centroid");
 }
 
 function getCentroidNodes(graph: GraphResponse) {

@@ -21,8 +21,8 @@ export async function fetchGraph(query: GraphQuery): Promise<GraphResponse> {
       filters: {
         memory_types: query.memoryType ? [query.memoryType] : null
       },
-      include_entities: false,
-      include_relations: false,
+      include_entities: true,
+      include_relations: true,
       include_correlations: true,
       include_vector_correlations: true,
       correlation_limit: query.correlationLimit,
