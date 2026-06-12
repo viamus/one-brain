@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from onebrain_core.common.path_mapping import resolve_mapped_path
+from onebrain.core.common.path_mapping import resolve_mapped_path
 
 
 def test_resolve_mapped_windows_path_to_container_path() -> None:

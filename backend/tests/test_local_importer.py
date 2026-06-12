@@ -5,8 +5,16 @@ import io
 from pathlib import Path
 
 import pytest
-from onebrain_cli import local_importer
-from onebrain_cli.local_importer import (
+from onebrain.core.contracts.schemas import (
+    IngestionAnalyzeRequest,
+    IngestionCommitRequest,
+    IngestionCommitResult,
+    IngestionDocument,
+    IngestionItem,
+)
+from onebrain.core.ingestion import analyze_memory_files
+from onebrain.tools import local_importer
+from onebrain.tools.local_importer import (
     CodexCliContextualizer,
     CodexCliOptions,
     KnowledgeContext,
@@ -24,14 +32,6 @@ from onebrain_cli.local_importer import (
     _resolve_docs_path,
     run_local_import,
 )
-from onebrain_core.contracts.schemas import (
-    IngestionAnalyzeRequest,
-    IngestionCommitRequest,
-    IngestionCommitResult,
-    IngestionDocument,
-    IngestionItem,
-)
-from onebrain_core.ingestion import analyze_memory_files
 
 
 class FakeApiClient:

@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from onebrain_core.application.service import OneBrainService
-from onebrain_core.contracts.schemas import (
+from onebrain.core.application.service import OneBrainService
+from onebrain.core.contracts.schemas import (
     ContextRequest,
     EntityInput,
     GraphAggregationRequest,
@@ -19,7 +19,7 @@ from onebrain_core.contracts.schemas import (
     SearchHit,
     SearchRequest,
 )
-from onebrain_infra.models import Entity, Memory
+from onebrain.infrastructure.models import Entity, Memory
 
 
 class FakeEntityScalarResult:

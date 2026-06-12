@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from onebrain_infra.embeddings import HashEmbeddingProvider
+from onebrain.infrastructure.embeddings import HashEmbeddingProvider
 
 
 @pytest.mark.asyncio

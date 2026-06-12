@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from onebrain_core.common.text import extract_heuristic_entities, normalize_name, scope_matches
+from onebrain.core.common.text import extract_heuristic_entities, normalize_name, scope_matches
 
 
 def test_normalize_name_removes_accents_and_extra_spaces() -> None:

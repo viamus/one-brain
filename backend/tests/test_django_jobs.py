@@ -4,11 +4,11 @@ import io
 
 import pytest
 from django.core.management import call_command
-from onebrain_core.contracts.schemas import GraphAggregationResponse
-from onebrain_jobs.graph_aggregation import GraphAggregationJobConfig
-from onebrain_jobs.management.commands import aggregate_graph_memories, run_scheduled_jobs
-from onebrain_jobs.scheduler import ScheduledJobConfig, run_scheduled_job
-from onebrain_jobs.status import JOB_NAME_GRAPH_AGGREGATION, read_job_status
+from onebrain.core.contracts.schemas import GraphAggregationResponse
+from onebrain.workers.graph_aggregation import GraphAggregationJobConfig
+from onebrain.workers.management.commands import aggregate_graph_memories, run_scheduled_jobs
+from onebrain.workers.scheduler import ScheduledJobConfig, run_scheduled_job
+from onebrain.workers.status import JOB_NAME_GRAPH_AGGREGATION, read_job_status
 
 
 def test_graph_aggregation_job_config_builds_core_request() -> None:

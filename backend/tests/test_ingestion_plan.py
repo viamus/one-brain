@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from onebrain_core.ingestion import analyze, commit
+from onebrain.core.ingestion import analyze, commit
 
 
 class FakeCaptureClient:

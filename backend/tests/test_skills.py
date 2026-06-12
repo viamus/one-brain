@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from onebrain_core.application.skills import add_hardened_skill, harden_skill_payload
+from onebrain.core.application.skills import add_hardened_skill, harden_skill_payload
 
 
 class FakeSkillClient:
