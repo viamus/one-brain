@@ -399,11 +399,11 @@ type MemoryFlowNode = Node<FlowNodeData>;
 type MemoryFlowEdge = Edge<FlowEdgeData>;
 
 const edgeLegend: Record<EdgeKind, { label: string; color: string; icon: ReactElement }> = {
-  vector: { label: "Vector", color: "#6b4eff", icon: <Timeline fontSize="small" /> },
-  correlation: { label: "Correlation", color: "#0f766e", icon: <JoinInner fontSize="small" /> },
-  entity: { label: "Entity", color: "#b7791f", icon: <Hub fontSize="small" /> },
-  explicit: { label: "Explicit", color: "#d04437", icon: <AccountTree fontSize="small" /> },
-  other: { label: "Other", color: "#64748b", icon: <AccountTree fontSize="small" /> }
+  vector: { label: "Vector", color: "#8b7cff", icon: <Timeline fontSize="small" /> },
+  correlation: { label: "Correlation", color: "#2dd4bf", icon: <JoinInner fontSize="small" /> },
+  entity: { label: "Entity", color: "#f59e0b", icon: <Hub fontSize="small" /> },
+  explicit: { label: "Explicit", color: "#fb7185", icon: <AccountTree fontSize="small" /> },
+  other: { label: "Other", color: "#94a3b8", icon: <AccountTree fontSize="small" /> }
 };
 
 const layoutOptions: Record<LayoutMode, { label: string; icon: ReactElement }> = {
@@ -612,7 +612,7 @@ function LiveGraph({
           maxZoom={1.7}
           onlyRenderVisibleElements
         >
-          <Background color="#dbe4ef" gap={28} />
+          <Background color="#1d2a3a" gap={28} />
           <Controls showInteractive={false} />
           <MiniMap
             pannable
@@ -885,9 +885,9 @@ function buildFlowEdges(edges: GraphEdge[], showLabels: boolean): MemoryFlowEdge
       },
       labelBgPadding: [4, 3],
       labelBgBorderRadius: 4,
-      labelBgStyle: { fill: "#ffffff", fillOpacity: 0.9 },
+      labelBgStyle: { fill: "#0d1420", fillOpacity: 0.94 },
       labelStyle: {
-        fill: "#334155",
+        fill: "#d7e3f3",
         fontWeight: 600,
         fontSize: 11
       },
@@ -1258,18 +1258,18 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function nodeAccent(node: GraphNode) {
   if (node.node_type === "entity") {
-    return "#b7791f";
+    return "#f59e0b";
   }
   if (node.subtype === "skill") {
-    return "#6b4eff";
+    return "#8b7cff";
   }
   if (node.subtype === "workflow" || node.subtype === "decision") {
-    return "#d04437";
+    return "#fb7185";
   }
   if (node.subtype === "rule" || node.subtype === "runbook") {
-    return "#0f766e";
+    return "#2dd4bf";
   }
-  return "#2f6fb0";
+  return "#60a5fa";
 }
 
 type JobsPanelProps = {

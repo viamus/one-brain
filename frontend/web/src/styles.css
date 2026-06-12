@@ -4,19 +4,40 @@ body,
   min-height: 100%;
 }
 
+:root {
+  color-scheme: dark;
+  --ob-bg: #070b12;
+  --ob-bg-soft: #0a111c;
+  --ob-surface: #0d1420;
+  --ob-surface-2: #111c2c;
+  --ob-surface-3: #172235;
+  --ob-border: #1d2a3a;
+  --ob-border-strong: #2a3b52;
+  --ob-text: #e6edf7;
+  --ob-muted: #91a4bd;
+  --ob-muted-2: #6f849d;
+  --ob-primary: #f97316;
+  --ob-primary-strong: #ea580c;
+  --ob-primary-soft: rgba(249, 115, 22, 0.16);
+  --ob-shadow: rgba(0, 0, 0, 0.36);
+}
+
 body {
   margin: 0;
+  background: var(--ob-bg);
 }
 
 .app-shell {
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(246, 248, 251, 0.94), rgba(246, 248, 251, 1)),
-    #f6f8fb;
+    radial-gradient(circle at 22% 0%, rgba(249, 115, 22, 0.09), transparent 36%),
+    linear-gradient(180deg, #070b12, #0a111c 58%, #070b12);
 }
 
 .top-bar {
-  border-bottom: 1px solid #d9e2ea;
+  border-bottom: 1px solid var(--ob-border);
+  background: rgba(7, 11, 18, 0.92);
+  backdrop-filter: blur(14px);
 }
 
 .top-toolbar {
@@ -32,8 +53,9 @@ body {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: #ffffff;
-  background: #12645f;
+  color: #160a03;
+  background: var(--ob-primary);
+  box-shadow: 0 0 28px rgba(249, 115, 22, 0.28);
 }
 
 .section-tabs {
@@ -68,7 +90,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #fbfcfe;
+  background: var(--ob-bg-soft);
 }
 
 .live-graph-canvas {
@@ -79,7 +101,7 @@ body {
 .live-graph {
   width: 100%;
   height: 100%;
-  background: #fbfcfe;
+  background: var(--ob-bg-soft);
 }
 
 .empty-graph {
@@ -90,27 +112,27 @@ body {
   place-content: center;
   justify-items: center;
   gap: 8px;
-  color: #536171;
-  background: #fbfcfe;
+  color: var(--ob-muted);
+  background: var(--ob-bg-soft);
 }
 
 .flow-panel {
   width: 100%;
   padding: 12px 14px;
-  border-bottom: 1px solid #d9e2ea;
-  background: #ffffff;
+  border-bottom: 1px solid var(--ob-border);
+  background: var(--ob-surface);
 }
 
 .flow-panel .MuiToggleButtonGroup-root {
-  background: #f4f7fa;
+  background: var(--ob-bg-soft);
 }
 
 .flow-panel .MuiToggleButton-root {
   gap: 5px;
   min-height: 30px;
   padding: 4px 8px;
-  border-color: #d6e0e9;
-  color: #334155;
+  border-color: var(--ob-border-strong);
+  color: #c9d8e8;
   font-size: 0.74rem;
   font-weight: 700;
   line-height: 1;
@@ -118,18 +140,18 @@ body {
 }
 
 .flow-panel .MuiToggleButton-root.Mui-selected {
-  color: #ffffff;
-  background: #12645f;
+  color: #160a03;
+  background: var(--ob-primary);
 }
 
 .flow-panel-label {
   min-width: 46px;
-  color: #536171;
+  color: var(--ob-muted);
   font-weight: 700;
 }
 
 .flow-panel-meter {
-  color: #536171;
+  color: var(--ob-muted);
 }
 
 .edge-filter {
@@ -148,14 +170,15 @@ body {
   padding: 8px 10px;
   border: 2px solid #2f6fb0;
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
+  color: var(--ob-text);
+  background: rgba(13, 20, 32, 0.96);
+  box-shadow: 0 14px 28px var(--ob-shadow);
 }
 
 .flow-node-selected {
   box-shadow:
-    0 0 0 4px rgba(47, 111, 176, 0.16),
-    0 16px 34px rgba(15, 23, 42, 0.18);
+    0 0 0 4px rgba(249, 115, 22, 0.2),
+    0 18px 36px rgba(0, 0, 0, 0.38);
 }
 
 .flow-node-dimmed {
@@ -174,8 +197,8 @@ body {
   min-width: 36px;
   padding: 2px 5px;
   border-radius: 999px;
-  color: #334155;
-  background: #edf2f7;
+  color: #c9d8e8;
+  background: var(--ob-surface-3);
   font-size: 0.68rem;
   font-weight: 700;
   text-align: center;
@@ -186,8 +209,8 @@ body {
   padding: 2px 7px;
   border-radius: 999px;
   overflow: hidden;
-  color: #334155;
-  background: #edf2f7;
+  color: #c9d8e8;
+  background: var(--ob-surface-3);
   font-size: 0.68rem;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -195,15 +218,15 @@ body {
 }
 
 .accent-chip {
-  color: #0f766e;
-  background: #dff7f3;
+  color: var(--ob-primary);
+  background: var(--ob-primary-soft);
 }
 
 .flow-node-group {
   display: block;
   max-width: 158px;
   overflow: hidden;
-  color: #536171;
+  color: var(--ob-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -216,7 +239,7 @@ body {
 
 .list-row {
   padding: 10px 0;
-  border-bottom: 1px solid #e6edf3;
+  border-bottom: 1px solid var(--ob-border);
 }
 
 .list-row:last-child {
@@ -232,7 +255,7 @@ body {
   gap: 9px;
   padding: 9px 0;
   border: 0;
-  border-bottom: 1px solid #e6edf3;
+  border-bottom: 1px solid var(--ob-border);
   color: inherit;
   background: transparent;
   font: inherit;
@@ -250,7 +273,7 @@ body {
 .relation-row:hover,
 .group-row:hover,
 .insight-row-selected {
-  color: #12645f;
+  color: var(--ob-primary);
 }
 
 .insight-row > span:last-child,
@@ -272,7 +295,7 @@ body {
   display: block;
   margin-top: 2px;
   overflow: hidden;
-  color: #64748b;
+  color: var(--ob-muted);
   font-size: 0.76rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -297,9 +320,9 @@ body {
 
 .detail-block {
   padding: 12px;
-  border: 1px solid #e0e7ef;
+  border: 1px solid var(--ob-border);
   border-radius: 8px;
-  background: #fbfcfe;
+  background: var(--ob-bg-soft);
 }
 
 .detail-row {
@@ -311,14 +334,52 @@ body {
 }
 
 .detail-row span {
-  color: #64748b;
+  color: var(--ob-muted);
 }
 
 .detail-row strong {
   overflow: hidden;
-  color: #334155;
+  color: #d7e3f3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.react-flow__background {
+  background-color: var(--ob-bg-soft);
+}
+
+.react-flow__controls {
+  border: 1px solid var(--ob-border);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+}
+
+.react-flow__controls-button {
+  border-bottom-color: var(--ob-border);
+  color: var(--ob-text);
+  background: var(--ob-surface);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--ob-surface-2);
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--ob-border);
+  background: rgba(7, 11, 18, 0.88);
+}
+
+.react-flow__minimap svg {
+  background: rgba(7, 11, 18, 0.9);
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(249, 115, 22, 0.12);
+  stroke: rgba(249, 115, 22, 0.46);
+}
+
+.react-flow__attribution {
+  color: var(--ob-muted-2);
+  background: rgba(7, 11, 18, 0.72);
 }
 
 .metric-card {

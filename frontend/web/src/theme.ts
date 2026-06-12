@@ -2,24 +2,29 @@ import { createTheme } from "@mui/material/styles";
 
 export const theme = createTheme({
   palette: {
-    mode: "light",
+    mode: "dark",
     primary: {
-      main: "#12645f",
-      contrastText: "#ffffff"
+      main: "#f97316",
+      contrastText: "#160a03"
     },
     secondary: {
-      main: "#6b4eff"
+      main: "#8b7cff"
     },
     warning: {
-      main: "#b7791f"
+      main: "#f59e0b"
     },
     background: {
-      default: "#f6f8fb",
-      paper: "#ffffff"
+      default: "#070b12",
+      paper: "#0d1420"
     },
     text: {
-      primary: "#17212b",
-      secondary: "#536171"
+      primary: "#e6edf7",
+      secondary: "#91a4bd"
+    },
+    divider: "#1d2a3a",
+    action: {
+      hover: "rgba(249, 115, 22, 0.1)",
+      selected: "rgba(249, 115, 22, 0.18)"
     }
   },
   shape: {
@@ -55,8 +60,32 @@ export const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
+          border: "1px solid #1d2a3a",
           borderRadius: 8,
-          boxShadow: "0 1px 2px rgba(16, 24, 40, 0.08)"
+          backgroundImage: "none",
+          boxShadow: "0 18px 48px rgba(0, 0, 0, 0.28)"
+        }
+      }
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundImage: "none"
+        }
+      }
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          backgroundColor: "#172235",
+          color: "#d7e3f3"
+        }
+      }
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: "#0a111c"
         }
       }
     }
