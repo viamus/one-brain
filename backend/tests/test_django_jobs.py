@@ -17,6 +17,7 @@ def test_graph_aggregation_job_config_builds_core_request() -> None:
             "scope_json": '{"project": "one-brain"}',
             "aggregate_scope_json": '{"project": "one-brain", "kind": "aggregate"}',
             "memory_type": "context",
+            "scoring_profile": "deterministic-v2",
             "limit": 500,
             "correlation_limit": 750,
             "max_degree": 12,
@@ -36,6 +37,7 @@ def test_graph_aggregation_job_config_builds_core_request() -> None:
     assert request.min_score == 10
     assert request.graph.filters.scope == {"project": "one-brain"}
     assert request.graph.filters.memory_types == ["context"]
+    assert request.graph.scoring_profile == "deterministic-v2"
     assert request.graph.grouping_limit == 25
     assert request.scope == {"project": "one-brain", "kind": "aggregate"}
 

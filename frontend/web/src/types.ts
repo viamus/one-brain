@@ -36,12 +36,26 @@ export type GroupingOpportunity = {
 
 export type GraphResponse = {
   query: string | null;
+  scoring_profile: string;
+  score_version: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
   memory_count: number;
   entity_count: number;
   omitted: number;
   grouping_opportunities: GroupingOpportunity[];
+};
+
+export type CorrelationScoringProfile = {
+  key: string;
+  label: string;
+  summary: string;
+  score_version: string;
+  model_family: string;
+  status: string;
+  online_safe: boolean;
+  requires_training: boolean;
+  executable: boolean;
 };
 
 export type JobStatus = {
@@ -54,6 +68,7 @@ export type JobStatus = {
     run_immediately?: boolean;
   };
   configuration: Record<string, unknown>;
+  scoring_profiles?: CorrelationScoringProfile[];
   last_run?: Record<string, unknown> | null;
   next_run_at?: string | null;
 };

@@ -15,11 +15,14 @@ Use the public GitHub Wiki as the main operating guide:
 - [OneBrain Wiki](https://github.com/viamus/one-brain/wiki)
 - [Architecture](https://github.com/viamus/one-brain/wiki/Architecture)
 - [Services And Ports](https://github.com/viamus/one-brain/wiki/Services-And-Ports)
+- [Graph And Correlation](https://github.com/viamus/one-brain/wiki/Graph-And-Correlation)
 - [OneBrain Codex Plugin](https://github.com/viamus/one-brain/wiki/Knowledge-Harvest-Plugin)
 - [Operational Runbooks](https://github.com/viamus/one-brain/wiki/Operational-Runbooks)
 
 The reviewable wiki source lives in [resources/wiki](resources/wiki). Sync those Markdown files to
 the GitHub Wiki repository when wiki content changes.
+
+For repeatable corpus and graph-scoring experiments, see [resources/docs/corpus-lab.md](resources/docs/corpus-lab.md).
 
 ## Quick Start
 
@@ -40,6 +43,7 @@ Open:
 
 - Web console: `http://localhost:8089/`
 - Web graph: `http://localhost:8089/graph`
+- Web settings: `http://localhost:8089/` then open `Settings`
 - API health: `http://localhost:8088/healthz`
 - API: `http://localhost:8088/api/v1`
 - MCP HTTP: `http://localhost:8090/mcp`

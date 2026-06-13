@@ -9,6 +9,7 @@ from typing import Any
 from django.conf import settings
 
 from onebrain.core.contracts.schemas import GraphAggregationResponse
+from onebrain.core.correlation import correlation_scoring_profiles_payload
 from onebrain.workers.graph_aggregation import GraphAggregationJobConfig
 from onebrain.workers.scheduler import ScheduledJobConfig
 
@@ -57,6 +58,7 @@ def graph_aggregation_config_snapshot(config: GraphAggregationJobConfig) -> dict
         "scope": config.scope,
         "aggregate_scope": config.aggregate_scope,
         "memory_type": config.memory_type,
+        "scoring_profile": config.scoring_profile,
         "limit": config.limit,
         "correlation_limit": config.correlation_limit,
         "max_degree": config.max_degree,
@@ -162,6 +164,7 @@ def graph_aggregation_status_response(
         "command": "onebrain-jobs run_scheduled_jobs --job graph-aggregation",
         "scheduler": scheduler_payload,
         "configuration": config_payload,
+        "scoring_profiles": correlation_scoring_profiles_payload(),
         "last_run": last_run,
         "next_run_at": _next_run_at(last_run, scheduler.interval_seconds),
     }

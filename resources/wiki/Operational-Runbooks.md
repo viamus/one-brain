@@ -70,6 +70,74 @@ docker compose run --rm onebrain-jobs `
   --json
 ```
 
+## Run Graph Aggregation
+
+Preview grouping opportunities before writing aggregate memories:
+
+```powershell
+docker compose run --rm onebrain-jobs `
+  onebrain-jobs aggregate_graph_memories `
+  --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}' `
+  --dry-run `
+  --scoring-profile deterministic-v1 `
+  --min-score 8 `
+  --limit 500 `
+  --correlation-limit 750 `
+  --max-degree 12 `
+  --grouping-limit 25 `
+  --grouping-min-size 3
+```
+
+Materialize after reviewing the dry-run output:
+
+```powershell
+docker compose run --rm onebrain-jobs `
+  onebrain-jobs aggregate_graph_memories `
+  --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}' `
+  --scoring-profile deterministic-v1 `
+  --min-score 8
+```
+
+Useful flags:
+
+- `--scope-json`: restricts graph inputs. Prefer scoped runs.
+- `--aggregate-scope-json`: overrides scope on generated aggregate memories.
+- `--memory-type`: filters graph inputs by memory type.
+- `--scoring-profile`: selects the executable correlation scorer, usually `deterministic-v1` or
+  `deterministic-v2`.
+- `--limit`: caps memory scan size.
+- `--correlation-limit`: caps generated correlation edges.
+- `--max-degree`: caps correlation edges per memory.
+- `--grouping-limit`: caps grouping opportunities.
+- `--grouping-min-size`: minimum members for a grouping opportunity.
+- `--min-score`: skips materialization below a score threshold.
+- `--dry-run`: reports opportunities without creating memories or links.
+
+Scheduler environment variables:
+
+- `ONEBRAIN_GRAPH_AGGREGATION_QUERY`
+- `ONEBRAIN_GRAPH_AGGREGATION_SCOPE_JSON`
+- `ONEBRAIN_GRAPH_AGGREGATION_AGGREGATE_SCOPE_JSON`
+- `ONEBRAIN_GRAPH_AGGREGATION_MEMORY_TYPE`
+- `ONEBRAIN_GRAPH_AGGREGATION_SCORING_PROFILE`
+- `ONEBRAIN_GRAPH_AGGREGATION_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE`
+- `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_LIMIT`
+- `ONEBRAIN_GRAPH_AGGREGATION_GROUPING_MIN_SIZE`
+- `ONEBRAIN_GRAPH_AGGREGATION_MIN_SCORE`
+- `ONEBRAIN_GRAPH_AGGREGATION_SOURCE_TYPE`
+- `ONEBRAIN_GRAPH_AGGREGATION_LINK_TYPE`
+- `ONEBRAIN_GRAPH_AGGREGATION_DRY_RUN`
+
+The job has no token cost and does not call GenAI, but it still costs database reads, facet pair
+scoring, and pgvector searches. Use stable scopes, bounded limits, `--dry-run`, and `--min-score`
+before scheduled writes.
+
+The public job status endpoint and Web Settings tab expose the configured scoring profile plus the
+registered strategy catalog. Planned ML profiles are visible for roadmap alignment, but the job
+rejects them until their training and artifact loading path exists.
+
 ## Import Local Knowledge
 
 ```powershell

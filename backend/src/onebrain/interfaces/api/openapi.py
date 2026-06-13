@@ -232,6 +232,10 @@ def openapi_schema() -> Schema:
                                         "command": {"type": "string"},
                                         "scheduler": {"type": "object"},
                                         "configuration": {"type": "object"},
+                                        "scoring_profiles": {
+                                            "type": "array",
+                                            "items": {"type": "object"},
+                                        },
                                         "last_run": {
                                             "oneOf": [{"type": "object"}, {"type": "null"}]
                                         },

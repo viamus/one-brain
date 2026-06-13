@@ -6,6 +6,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from onebrain.core.contracts.correlation_profiles import (
+    DEFAULT_CORRELATION_SCORING_PROFILE,
+    normalize_correlation_scoring_profile,
+)
+
 MemoryType = Literal[
     "rule",
     "preference",
@@ -204,6 +209,7 @@ class GraphRequest(BaseModel):
     memory_ids: list[uuid.UUID] = Field(default_factory=list)
     limit: int = Field(default=100, ge=1, le=500)
     filters: SearchFilters = Field(default_factory=SearchFilters)
+    scoring_profile: str = DEFAULT_CORRELATION_SCORING_PROFILE
     include_entities: bool = True
     include_relations: bool = True
     include_correlations: bool = True
@@ -223,6 +229,11 @@ class GraphRequest(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("scoring_profile")
+    @classmethod
+    def normalize_scoring_profile(cls, value: str) -> str:
+        return normalize_correlation_scoring_profile(value, require_executable=True)
 
 
 class GraphNode(BaseModel):
@@ -263,6 +274,8 @@ class GraphGroupingOpportunity(BaseModel):
 
 class GraphResponse(BaseModel):
     query: str | None
+    scoring_profile: str = DEFAULT_CORRELATION_SCORING_PROFILE
+    score_version: str = DEFAULT_CORRELATION_SCORING_PROFILE
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     memory_count: int

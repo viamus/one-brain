@@ -68,7 +68,13 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { fetchGraph, fetchJobStatus, type GraphQuery } from "./api";
-import type { GraphEdge, GraphNode, GraphResponse, JobStatus } from "./types";
+import type {
+  CorrelationScoringProfile,
+  GraphEdge,
+  GraphNode,
+  GraphResponse,
+  JobStatus
+} from "./types";
 
 const memoryTypes = [
   "",
@@ -84,6 +90,8 @@ const memoryTypes = [
 
 const initialGraph: GraphResponse = {
   query: null,
+  scoring_profile: "deterministic-v1",
+  score_version: "deterministic-v1",
   nodes: [],
   edges: [],
   memory_count: 0,
@@ -92,7 +100,22 @@ const initialGraph: GraphResponse = {
   grouping_opportunities: []
 };
 
-type TabValue = "graph" | "jobs" | "storage";
+const defaultScoringProfile = "deterministic-v1";
+const fallbackScoringProfiles: CorrelationScoringProfile[] = [
+  {
+    key: defaultScoringProfile,
+    label: "Deterministic v1",
+    summary: "Current production-safe shared entity, semantic facet, and vector-neighbor scorer.",
+    score_version: defaultScoringProfile,
+    model_family: "deterministic",
+    status: "available",
+    online_safe: true,
+    requires_training: false,
+    executable: true
+  }
+];
+
+type TabValue = "graph" | "jobs" | "settings" | "storage";
 type GraphSelection = { type: "node" | "edge"; id: string } | null;
 
 export function App() {
@@ -101,6 +124,7 @@ export function App() {
   );
   const [query, setQuery] = useState("onebrain");
   const [memoryType, setMemoryType] = useState("");
+  const [scoringProfile, setScoringProfile] = useState(defaultScoringProfile);
   const [limit, setLimit] = useState(160);
   const [correlationLimit, setCorrelationLimit] = useState(300);
   const [maxDegree, setMaxDegree] = useState(8);
@@ -111,9 +135,13 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   const graphQuery = useMemo<GraphQuery>(
-    () => ({ query, memoryType, limit, correlationLimit, maxDegree }),
-    [correlationLimit, limit, maxDegree, memoryType, query]
+    () => ({ query, memoryType, scoringProfile, limit, correlationLimit, maxDegree }),
+    [correlationLimit, limit, maxDegree, memoryType, query, scoringProfile]
   );
+
+  const scoringProfiles = jobStatus?.scoring_profiles?.length
+    ? jobStatus.scoring_profiles
+    : fallbackScoringProfiles;
 
   const loadGraph = useCallback(async () => {
     setLoadingGraph(true);
@@ -144,6 +172,13 @@ export function App() {
     void loadJobs();
   }, [loadGraph, loadJobs]);
 
+  useEffect(() => {
+    const configured = readConfigString(jobStatus?.configuration, "scoring_profile");
+    if (configured && scoringProfile === defaultScoringProfile) {
+      setScoringProfile(configured);
+    }
+  }, [jobStatus, scoringProfile]);
+
   return (
     <Box className="app-shell">
       <AppBar position="sticky" color="inherit" elevation={0} className="top-bar">
@@ -169,6 +204,7 @@ export function App() {
           >
             <Tab icon={<AccountTree />} iconPosition="start" value="graph" label="Graph" />
             <Tab icon={<Analytics />} iconPosition="start" value="jobs" label="Jobs" />
+            <Tab icon={<Tune />} iconPosition="start" value="settings" label="Settings" />
             <Tab icon={<Storage />} iconPosition="start" value="storage" label="Storage" />
           </Tabs>
         </Toolbar>
@@ -187,11 +223,14 @@ export function App() {
             loading={loadingGraph}
             query={query}
             memoryType={memoryType}
+            scoringProfile={scoringProfile}
+            scoringProfiles={scoringProfiles}
             limit={limit}
             correlationLimit={correlationLimit}
             maxDegree={maxDegree}
             onQueryChange={setQuery}
             onMemoryTypeChange={setMemoryType}
+            onScoringProfileChange={setScoringProfile}
             onLimitChange={setLimit}
             onCorrelationLimitChange={setCorrelationLimit}
             onMaxDegreeChange={setMaxDegree}
@@ -201,6 +240,16 @@ export function App() {
 
         {tab === "jobs" ? (
           <JobsPanel jobStatus={jobStatus} loading={loadingJobs} onRefresh={loadJobs} />
+        ) : null}
+
+        {tab === "settings" ? (
+          <SettingsPanel
+            graph={graph}
+            jobStatus={jobStatus}
+            loading={loadingJobs}
+            scoringProfiles={scoringProfiles}
+            onRefresh={loadJobs}
+          />
         ) : null}
 
         {tab === "storage" ? (
@@ -216,11 +265,14 @@ type GraphPanelProps = {
   loading: boolean;
   query: string;
   memoryType: string;
+  scoringProfile: string;
+  scoringProfiles: CorrelationScoringProfile[];
   limit: number;
   correlationLimit: number;
   maxDegree: number;
   onQueryChange: (value: string) => void;
   onMemoryTypeChange: (value: string) => void;
+  onScoringProfileChange: (value: string) => void;
   onLimitChange: (value: number) => void;
   onCorrelationLimitChange: (value: number) => void;
   onMaxDegreeChange: (value: number) => void;
@@ -238,7 +290,8 @@ function GraphPanel(props: GraphPanelProps) {
     ["Nodes", props.graph.nodes.length],
     ["Edges", props.graph.edges.length],
     ["Memories", props.graph.memory_count],
-    ["Groups", props.graph.grouping_opportunities.length]
+    ["Groups", props.graph.grouping_opportunities.length],
+    ["Profile", props.graph.scoring_profile]
   ];
 
   return (
@@ -272,6 +325,25 @@ function GraphPanel(props: GraphPanelProps) {
                     {memoryTypes.map((type) => (
                       <MenuItem key={type || "all"} value={type}>
                         {type || "All"}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth size="small">
+                  <InputLabel id="scoring-profile-label">Scoring</InputLabel>
+                  <Select
+                    labelId="scoring-profile-label"
+                    label="Scoring"
+                    value={props.scoringProfile}
+                    onChange={(event) => props.onScoringProfileChange(event.target.value)}
+                  >
+                    {props.scoringProfiles.map((profile) => (
+                      <MenuItem
+                        key={profile.key}
+                        value={profile.key}
+                        disabled={!profile.executable}
+                      >
+                        {profile.label} - {profile.status}
                       </MenuItem>
                     ))}
                   </Select>
@@ -1331,6 +1403,132 @@ function JobsPanel({ jobStatus, loading, onRefresh }: JobsPanelProps) {
   );
 }
 
+type SettingsPanelProps = {
+  graph: GraphResponse;
+  jobStatus: JobStatus | null;
+  loading: boolean;
+  scoringProfiles: CorrelationScoringProfile[];
+  onRefresh: () => void;
+};
+
+function SettingsPanel({
+  graph,
+  jobStatus,
+  loading,
+  scoringProfiles,
+  onRefresh
+}: SettingsPanelProps) {
+  const config = jobStatus?.configuration ?? {};
+  const activeProfileKey =
+    readConfigString(config, "scoring_profile") || graph.scoring_profile || defaultScoringProfile;
+  const runtimeProfile =
+    scoringProfiles.find((profile) => profile.key === activeProfileKey) || scoringProfiles[0];
+
+  return (
+    <Grid container spacing={2.5} alignItems="stretch">
+      <Grid size={{ xs: 12, md: 4 }}>
+        <Card className="settings-card">
+          <CardContent>
+            <Stack spacing={1.5}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                <Typography component="h2" variant="h2">
+                  Runtime Settings
+                </Typography>
+                <Tooltip title="Refresh settings">
+                  <Button
+                    variant="outlined"
+                    startIcon={loading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={onRefresh}
+                    disabled={loading}
+                  >
+                    Refresh
+                  </Button>
+                </Tooltip>
+              </Stack>
+              <Divider />
+              <SettingRow label="Scoring profile" value={runtimeProfile?.label || activeProfileKey} />
+              <SettingRow label="Score version" value={graph.score_version || "-"} />
+              <SettingRow
+                label="Correlation limit"
+                value={readConfigString(config, "correlation_limit")}
+              />
+              <SettingRow label="Max degree" value={readConfigString(config, "max_degree")} />
+              <SettingRow
+                label="Grouping size"
+                value={readConfigString(config, "grouping_min_size")}
+              />
+              <SettingRow label="Dry run" value={readConfigString(config, "dry_run")} />
+            </Stack>
+          </CardContent>
+        </Card>
+      </Grid>
+
+      <Grid size={{ xs: 12, md: 8 }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Hub color="primary" />
+            <Typography component="h2" variant="h2">
+              Correlation Strategies
+            </Typography>
+          </Stack>
+          <Grid container spacing={1.5}>
+            {scoringProfiles.map((profile) => (
+              <Grid key={profile.key} size={{ xs: 12, sm: 6 }}>
+                <Card
+                  className={[
+                    "profile-card",
+                    profile.key === activeProfileKey ? "profile-card-active" : "",
+                    profile.executable ? "" : "profile-card-disabled"
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <CardContent>
+                    <Stack spacing={1.25}>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between">
+                        <Typography component="h3" variant="h2">
+                          {profile.label}
+                        </Typography>
+                        <StatusChip value={profile.status} />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        {profile.summary}
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={1}>
+                        <Chip size="small" label={profile.model_family} />
+                        <Chip size="small" label={profile.score_version} />
+                        <Chip
+                          size="small"
+                          label={profile.requires_training ? "training required" : "no training"}
+                        />
+                        <Chip
+                          size="small"
+                          label={profile.online_safe ? "online-safe" : "offline first"}
+                        />
+                      </Stack>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Stack>
+      </Grid>
+    </Grid>
+  );
+}
+
+function SettingRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <Box className="setting-row">
+      <Typography variant="body2" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography variant="body2">{value || "-"}</Typography>
+    </Box>
+  );
+}
+
 function StoragePanel({ graph, jobStatus }: { graph: GraphResponse; jobStatus: JobStatus | null }) {
   return (
     <Grid container spacing={2.5}>
@@ -1358,6 +1556,21 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function StatusChip({ value }: { value: string }) {
-  const color = value === "success" ? "success" : value === "failed" ? "error" : "default";
+  const color: "success" | "error" | "warning" | "default" =
+    value === "success" || value === "available"
+      ? "success"
+      : value === "failed"
+        ? "error"
+        : value === "experimental"
+          ? "warning"
+          : "default";
   return <Chip color={color} size="small" label={value} className="status-chip" />;
+}
+
+function readConfigString(config: Record<string, unknown> | undefined, key: string) {
+  const value = config?.[key];
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return String(value);
 }
