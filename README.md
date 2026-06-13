@@ -15,11 +15,14 @@ Use the public GitHub Wiki as the main operating guide:
 - [OneBrain Wiki](https://github.com/viamus/one-brain/wiki)
 - [Architecture](https://github.com/viamus/one-brain/wiki/Architecture)
 - [Services And Ports](https://github.com/viamus/one-brain/wiki/Services-And-Ports)
+- [Graph And Correlation](https://github.com/viamus/one-brain/wiki/Graph-And-Correlation)
 - [OneBrain Codex Plugin](https://github.com/viamus/one-brain/wiki/Knowledge-Harvest-Plugin)
 - [Operational Runbooks](https://github.com/viamus/one-brain/wiki/Operational-Runbooks)
 
 The reviewable wiki source lives in [resources/wiki](resources/wiki). Sync those Markdown files to
 the GitHub Wiki repository when wiki content changes.
+
+For repeatable corpus and graph-scoring experiments, see [resources/docs/corpus-lab.md](resources/docs/corpus-lab.md).
 
 ## Quick Start
 

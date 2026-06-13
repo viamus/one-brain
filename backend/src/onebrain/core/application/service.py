@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 import uuid
 from collections import defaultdict
@@ -48,6 +47,25 @@ from onebrain.core.contracts.schemas import (
     SearchResponse,
     SourceRef,
 )
+from onebrain.core.correlation import (
+    GENERIC_MEMORY_TITLES,
+    CorrelationGroupingBuilder,
+    CorrelationPipeline,
+    CorrelationScorer,
+    correlation_phrases,
+    correlation_terms,
+    grouping_label,
+    grouping_reasons,
+    humanize_grouping_keyword,
+    is_correlation_term,
+    is_generic_correlation_tag,
+    is_graph_entity,
+    is_graph_memory,
+    is_low_signal_correlation_memory,
+    jaccard,
+    keyword_from_grouping_facet,
+    memory_correlation_facets,
+)
 from onebrain.infrastructure.embeddings import EmbeddingProvider
 from onebrain.infrastructure.models import (
     AuditEvent,
@@ -60,148 +78,6 @@ from onebrain.infrastructure.models import (
 from onebrain.infrastructure.vector_store import MemoryVectorStore
 
 LOGGER = structlog.get_logger(__name__)
-
-CORRELATION_STOPWORDS = {
-    "about",
-    "above",
-    "active",
-    "after",
-    "again",
-    "against",
-    "also",
-    "always",
-    "ambevtech",
-    "and",
-    "antes",
-    "are",
-    "area",
-    "areas",
-    "available",
-    "based",
-    "because",
-    "been",
-    "being",
-    "body",
-    "branch",
-    "browser",
-    "cada",
-    "caso",
-    "catalog",
-    "codex",
-    "com",
-    "como",
-    "configura",
-    "commit",
-    "content",
-    "context",
-    "data",
-    "description",
-    "details",
-    "deve",
-    "does",
-    "document",
-    "dos",
-    "ela",
-    "ele",
-    "eles",
-    "essa",
-    "esse",
-    "esta",
-    "este",
-    "example",
-    "examples",
-    "feedback",
-    "false",
-    "file",
-    "files",
-    "fonte",
-    "for",
-    "from",
-    "guidance",
-    "had",
-    "has",
-    "have",
-    "import",
-    "imported",
-    "inside",
-    "into",
-    "its",
-    "manifest",
-    "meta",
-    "items",
-    "json",
-    "latest",
-    "libraries",
-    "library",
-    "manual",
-    "mais",
-    "mas",
-    "metadata",
-    "memoria",
-    "memory",
-    "module",
-    "must",
-    "name",
-    "nao",
-    "not",
-    "only",
-    "onebrain",
-    "options",
-    "padr",
-    "para",
-    "pela",
-    "pelo",
-    "por",
-    "private",
-    "project",
-    "que",
-    "query",
-    "read",
-    "readme",
-    "reference",
-    "references",
-    "repo",
-    "repository",
-    "required",
-    "requires",
-    "scope",
-    "section",
-    "sem",
-    "ser",
-    "should",
-    "source",
-    "status",
-    "sua",
-    "summary",
-    "target",
-    "the",
-    "this",
-    "text",
-    "topic",
-    "toolbox",
-    "toolkit",
-    "true",
-    "under",
-    "uma",
-    "use",
-    "used",
-    "uses",
-    "using",
-    "value",
-    "values",
-    "when",
-    "wiki",
-    "with",
-    "work",
-}
-
-GENERIC_MEMORY_TITLES = {
-    "body",
-    "document",
-    "document body",
-    "manifest",
-    "readme",
-}
 
 
 class OneBrainService:
@@ -217,6 +93,30 @@ class OneBrainService:
         self._session_factory = session_factory
         self._embeddings = embeddings
         self._vector_store = vector_store
+        self._correlation_scorer = CorrelationScorer()
+        self._correlation_pipeline = CorrelationPipeline(self._correlation_scorer)
+        self._correlation_grouping = CorrelationGroupingBuilder(self._correlation_scorer)
+
+    def _correlation_score_policy(self) -> CorrelationScorer:
+        scorer = getattr(self, "_correlation_scorer", None)
+        if scorer is None:
+            scorer = CorrelationScorer()
+            self._correlation_scorer = scorer
+        return scorer
+
+    def _correlation_graph_pipeline(self) -> CorrelationPipeline:
+        pipeline = getattr(self, "_correlation_pipeline", None)
+        if pipeline is None:
+            pipeline = CorrelationPipeline(self._correlation_score_policy())
+            self._correlation_pipeline = pipeline
+        return pipeline
+
+    def _correlation_grouping_builder(self) -> CorrelationGroupingBuilder:
+        grouping = getattr(self, "_correlation_grouping", None)
+        if grouping is None:
+            grouping = CorrelationGroupingBuilder(self._correlation_score_policy())
+            self._correlation_grouping = grouping
+        return grouping
 
     async def capture_memory(self, payload: MemoryCreate, actor: str = "system") -> MemoryOut:
         async with self._session_factory() as session:
@@ -745,13 +645,18 @@ class OneBrainService:
                     from_memory_id=aggregate_memory.id,
                     to_memory_id=member.id,
                     link_type=request.link_type,
-                    confidence=max(0.5, opportunity.cohesion),
+                    confidence=self._correlation_score_policy().member_link_confidence(
+                        opportunity.cohesion
+                    ),
                     order_index=index,
                     evidence=opportunity.summary,
                     metadata={
                         "aggregation_kind": "graph_grouping_opportunity",
                         "opportunity_id": opportunity.id,
                         "opportunity_score": opportunity.score,
+                        "score_version": opportunity.metadata.get(
+                            "score_version", self._correlation_score_policy().score_version
+                        ),
                     },
                     actor=actor,
                 )
@@ -1160,15 +1065,21 @@ class OneBrainService:
             if index >= limit:
                 break
             shared = sorted(shared_entities)
+            edge_score = self._correlation_score_policy().shared_entity_edge(len(shared))
             edge = GraphEdge(
                 id=f"correlation:{left}:{right}",
                 source=f"memory:{left}",
                 target=f"memory:{right}",
                 edge_type="correlation",
                 label="shared_entity",
-                weight=min(1.0, 0.35 + len(shared) * 0.15),
-                confidence=min(1.0, 0.5 + len(shared) * 0.1),
-                metadata={"reasons": ["shared_entity"], "shared_entities": shared[:20]},
+                weight=edge_score.weight,
+                confidence=edge_score.confidence,
+                metadata={
+                    "reasons": ["shared_entity"],
+                    "shared_entities": shared[:20],
+                    "score": edge_score.score,
+                    "score_version": self._correlation_score_policy().score_version,
+                },
             )
             edges[edge.id] = edge
 
@@ -1259,15 +1170,18 @@ class OneBrainService:
         similarity: float,
     ) -> bool:
         edge_id = f"correlation:{left}:{right}"
-        score = similarity * 10.0
+        edge_score = self._correlation_score_policy().vector_edge(similarity)
         if edge_id in edges:
             edge = edges[edge_id]
             self._add_edge_reason(edge, "vector_neighbor")
             edge.label = "semantic_neighbor"
-            edge.weight = max(edge.weight, min(1.0, 0.25 + similarity * 0.75))
-            edge.confidence = max(edge.confidence or 0.0, min(1.0, similarity))
+            edge.weight = max(edge.weight, edge_score.weight)
+            edge.confidence = max(edge.confidence or 0.0, edge_score.confidence)
             edge.metadata["vector_similarity"] = round(similarity, 6)
-            edge.metadata["score"] = round(max(self._correlation_edge_rank(edge), score), 4)
+            edge.metadata["score"] = round(
+                max(self._correlation_edge_rank(edge), edge_score.score), 4
+            )
+            edge.metadata["score_version"] = self._correlation_score_policy().score_version
             return False
 
         edges[edge_id] = GraphEdge(
@@ -1276,12 +1190,13 @@ class OneBrainService:
             target=f"memory:{right}",
             edge_type="correlation",
             label="vector_neighbor",
-            weight=min(1.0, 0.25 + similarity * 0.75),
-            confidence=min(1.0, similarity),
+            weight=edge_score.weight,
+            confidence=edge_score.confidence,
             metadata={
                 "reasons": ["vector_neighbor"],
                 "vector_similarity": round(similarity, 6),
-                "score": round(score, 4),
+                "score": edge_score.score,
+                "score_version": self._correlation_score_policy().score_version,
             },
         )
         return True
@@ -1314,14 +1229,17 @@ class OneBrainService:
                 facet, memory_count
             ):
                 continue
-            facet_idf = math.log((memory_count + 1) / (facet_frequency + 0.5)) + 1.0
             for left, right in combinations(sorted(memory_ids, key=str), 2):
                 pair = (str(left), str(right))
                 shared_weight = min(
                     facets_by_memory[left].get(facet, 0.0),
                     facets_by_memory[right].get(facet, 0.0),
                 )
-                contribution = shared_weight * facet_idf
+                contribution = self._correlation_score_policy().facet_contribution(
+                    shared_weight=shared_weight,
+                    facet_frequency=facet_frequency,
+                    memory_count=memory_count,
+                )
                 pair_facets[pair].add(facet)
                 pair_facet_scores[pair][facet] = contribution
                 pair_facet_weights[pair][facet] = shared_weight
@@ -1332,7 +1250,7 @@ class OneBrainService:
                 facet_scores.items(),
                 key=lambda item: (-item[1], item[0]),
             )
-            score = sum(facet_score for _, facet_score in ranked_scored_facets[:6])
+            score = self._correlation_score_policy().score_facets(ranked_scored_facets)
             facets = pair_facets[(left, right)]
             if not self._is_meaningful_correlation(
                 score,
@@ -1359,18 +1277,20 @@ class OneBrainService:
             if edge_id in edges:
                 self._merge_facet_correlation_edge(edges[edge_id], ranked_facets, score)
                 continue
+            edge_score = self._correlation_score_policy().facet_edge(score)
             edges[edge_id] = GraphEdge(
                 id=edge_id,
                 source=f"memory:{left}",
                 target=f"memory:{right}",
                 edge_type="correlation",
                 label="semantic_overlap",
-                weight=min(1.0, 0.25 + score * 0.12),
-                confidence=min(1.0, 0.35 + score * 0.12),
+                weight=edge_score.weight,
+                confidence=edge_score.confidence,
                 metadata={
                     "reasons": ["semantic_overlap"],
                     "shared_facets": ranked_facets[:20],
-                    "score": round(score, 4),
+                    "score": edge_score.score,
+                    "score_version": self._correlation_score_policy().score_version,
                 },
             )
             degree_by_memory[left] += 1
@@ -1390,89 +1310,33 @@ class OneBrainService:
         if not isinstance(existing_facets, list):
             existing_facets = []
         merged_facets = list(dict.fromkeys([*existing_facets, *ranked_facets]))
+        edge_score = self._correlation_score_policy().facet_edge(score)
         edge.metadata["shared_facets"] = merged_facets[:20]
-        edge.metadata["score"] = round(max(self._correlation_edge_rank(edge), score), 4)
-        edge.weight = max(edge.weight, min(1.0, 0.25 + score * 0.12))
-        edge.confidence = max(edge.confidence or 0.0, min(1.0, 0.35 + score * 0.12))
+        edge.metadata["score"] = round(max(self._correlation_edge_rank(edge), edge_score.score), 4)
+        edge.metadata["score_version"] = self._correlation_score_policy().score_version
+        edge.weight = max(edge.weight, edge_score.weight)
+        edge.confidence = max(edge.confidence or 0.0, edge_score.confidence)
 
     def _add_edge_reason(self, edge: GraphEdge, reason: str) -> None:
-        reasons = edge.metadata.get("reasons")
-        if not isinstance(reasons, list):
-            reasons = []
-        edge.metadata["reasons"] = sorted({*reasons, reason})
+        self._correlation_graph_pipeline().add_edge_reason(edge, reason)
 
     def _memory_correlation_facets(self, memory: Memory) -> dict[str, float]:
-        if self._is_low_signal_correlation_memory(memory):
-            return {}
-
-        facets: dict[str, float] = {}
-        title_text = memory.title or ""
-        metadata = memory.metadata_ or {}
-        metadata_text = " ".join(str(value) for value in metadata.values() if value)
-        content_text = memory.content[:6000]
-
-        for term in self._correlation_terms(title_text):
-            facets[f"term:{term}"] = max(facets.get(f"term:{term}", 0.0), 1.25)
-        for phrase in self._correlation_phrases(title_text):
-            facets[f"phrase:{phrase}"] = max(facets.get(f"phrase:{phrase}", 0.0), 1.5)
-        for term in self._correlation_terms(metadata_text):
-            facets[f"term:{term}"] = max(facets.get(f"term:{term}", 0.0), 0.95)
-        for phrase in self._correlation_phrases(metadata_text):
-            facets[f"phrase:{phrase}"] = max(facets.get(f"phrase:{phrase}", 0.0), 1.15)
-        for term in self._correlation_terms(content_text):
-            facets[f"term:{term}"] = max(facets.get(f"term:{term}", 0.0), 0.35)
-        for phrase in self._correlation_phrases(content_text[:2000]):
-            facets[f"phrase:{phrase}"] = max(facets.get(f"phrase:{phrase}", 0.0), 0.45)
-
-        for key, value in memory.scope.items():
-            if (
-                key not in {"project", "catalog", "source"}
-                and isinstance(value, str | int | float | bool)
-                and str(value).strip()
-            ):
-                facets[f"context:{key}={normalize_name(str(value))}"] = 0.25
-        for tag in memory.tags:
-            if self._is_generic_correlation_tag(tag):
-                continue
-            normalized_tag = normalize_name(tag.replace(":", " "))
-            if tag.startswith(("library:", "source-type:")):
-                facets[f"context:{normalized_tag}"] = 0.25
-            else:
-                facets[f"tag:{normalized_tag}"] = 0.55
-                for term in self._correlation_terms(normalized_tag):
-                    facets[f"term:{term}"] = max(facets.get(f"term:{term}", 0.0), 0.5)
-        if memory.source_type and memory.source_type not in {"manual", "file-import"}:
-            facets[f"context:source_type={normalize_name(memory.source_type)}"] = 0.15
-        return facets
+        return memory_correlation_facets(memory)
 
     def _is_generic_correlation_tag(self, tag: str) -> bool:
-        return tag in {"imported", "file-memory", "skill", "asset:skill"} or tag.startswith("ext:")
+        return is_generic_correlation_tag(tag)
 
     def _is_low_signal_correlation_memory(self, memory: Memory) -> bool:
-        source_ref = (memory.source_ref or "").lower().replace("\\", "/")
-        if source_ref.endswith("/library.json"):
-            return True
-        return normalize_name(memory.title or "") == "imported memory library"
+        return is_low_signal_correlation_memory(memory)
 
     def _is_graph_memory(self, memory: Memory) -> bool:
-        metadata = memory.metadata_ or {}
-        if "ingestion:child" in memory.tags:
-            return False
-        if metadata.get("ingestion_item_type") == "section":
-            return False
-        return True
+        return is_graph_memory(memory)
 
     def _is_graph_entity(self, entity: Entity) -> bool:
-        return entity.entity_type != "source_document"
+        return is_graph_entity(entity)
 
     def _max_correlation_facet_frequency(self, facet: str, memory_count: int) -> int:
-        if facet.startswith("context:"):
-            return 0
-        if facet.startswith("phrase:"):
-            return min(10, max(3, memory_count // 8))
-        if facet.startswith("term:"):
-            return min(12, max(3, memory_count // 8))
-        return min(8, max(2, memory_count // 12))
+        return self._correlation_score_policy().max_facet_frequency(facet, memory_count)
 
     def _is_meaningful_correlation(
         self,
@@ -1480,57 +1344,20 @@ class OneBrainService:
         facets: set[str],
         facet_weights: dict[str, float],
     ) -> bool:
-        specific = [
-            facet
-            for facet in facets
-            if facet.startswith(("term:", "phrase:", "tag:"))
-            and not facet.startswith("tag:library")
-        ]
-        anchors = [facet for facet in specific if facet_weights.get(facet, 0.0) >= 0.9]
-        phrase_count = sum(1 for facet in specific if facet.startswith("phrase:"))
-        if len(anchors) >= 2 and score >= 2.1:
-            return True
-        if len(anchors) >= 1 and len(specific) >= 3 and score >= 3.1:
-            return True
-        return phrase_count >= 2 and score >= 4.2
+        return self._correlation_score_policy().is_meaningful_facet_correlation(
+            score=score,
+            facets=facets,
+            facet_weights=facet_weights,
+        )
 
     def _correlation_terms(self, text: str, *, limit: int = 30) -> list[str]:
-        normalized = normalize_name(text)
-        terms: list[str] = []
-        seen: set[str] = set()
-        for raw in re.findall(r"[a-z0-9][a-z0-9_-]{2,}", normalized):
-            for term in re.split(r"[_-]+", raw):
-                if not self._is_correlation_term(term) or term in seen:
-                    continue
-                seen.add(term)
-                terms.append(term)
-                if len(terms) >= limit:
-                    return terms
-        return terms
+        return correlation_terms(text, limit=limit)
 
     def _correlation_phrases(self, text: str, *, limit: int = 16) -> list[str]:
-        terms = self._correlation_terms(text, limit=80)
-        phrases: list[str] = []
-        seen: set[str] = set()
-        for left, right in zip(terms, terms[1:], strict=False):
-            if left == right:
-                continue
-            phrase = f"{left} {right}"
-            if phrase in seen:
-                continue
-            seen.add(phrase)
-            phrases.append(phrase)
-            if len(phrases) >= limit:
-                return phrases
-        return phrases
+        return correlation_phrases(text, limit=limit)
 
     def _is_correlation_term(self, term: str) -> bool:
-        return (
-            len(term) >= 4
-            and not term.isdigit()
-            and term not in CORRELATION_STOPWORDS
-            and not term.startswith("chunk")
-        )
+        return is_correlation_term(term)
 
     def _prune_correlation_edges(
         self,
@@ -1539,122 +1366,30 @@ class OneBrainService:
         limit: int,
         max_degree: int,
     ) -> None:
-        correlation_edges = [edge for edge in edges.values() if edge.edge_type == "correlation"]
-        kept: set[str] = set()
-        degree_by_memory: defaultdict[str, int] = defaultdict(int)
-        for edge in sorted(
-            correlation_edges,
-            key=lambda item: (-self._correlation_edge_rank(item), item.id),
-        ):
-            if len(kept) >= limit:
-                break
-            source = self._correlation_node_memory_key(edge.source)
-            target = self._correlation_node_memory_key(edge.target)
-            if degree_by_memory[source] >= max_degree or degree_by_memory[target] >= max_degree:
-                continue
-            kept.add(edge.id)
-            degree_by_memory[source] += 1
-            degree_by_memory[target] += 1
-
-        for edge in correlation_edges:
-            if edge.id not in kept:
-                edges.pop(edge.id, None)
+        self._correlation_graph_pipeline().prune_edges(
+            edges,
+            limit=limit,
+            max_degree=max_degree,
+        )
 
     def _correlation_degree_by_memory(
         self,
         edges: dict[str, GraphEdge],
     ) -> defaultdict[str, int]:
-        degree_by_memory: defaultdict[str, int] = defaultdict(int)
-        for edge in edges.values():
-            if edge.edge_type != "correlation":
-                continue
-            degree_by_memory[self._correlation_node_memory_key(edge.source)] += 1
-            degree_by_memory[self._correlation_node_memory_key(edge.target)] += 1
-        return degree_by_memory
+        return self._correlation_graph_pipeline().degree_by_memory(edges)
 
     def _correlation_node_memory_key(self, node_id: str) -> str:
-        if node_id.startswith("memory:"):
-            return node_id.removeprefix("memory:")
-        return node_id
+        return self._correlation_graph_pipeline().node_memory_key(node_id)
 
     def _correlation_edge_rank(self, edge: GraphEdge) -> float:
-        metadata_score = edge.metadata.get("score")
-        if isinstance(metadata_score, int | float):
-            return float(metadata_score)
-        shared_entities = edge.metadata.get("shared_entities")
-        if isinstance(shared_entities, list):
-            return len(shared_entities) * 1.5 + edge.weight
-        return edge.weight + (edge.confidence or 0.0)
+        return self._correlation_score_policy().edge_rank(edge)
 
     def _annotate_graph_insights(
         self,
         nodes: dict[str, GraphNode],
         edges: dict[str, GraphEdge],
     ) -> None:
-        stats: dict[str, dict[str, Any]] = defaultdict(
-            lambda: {
-                "degree": 0,
-                "vector_degree": 0,
-                "semantic_degree": 0,
-                "centrality": 0.0,
-                "neighbors": set(),
-            }
-        )
-        for edge in edges.values():
-            if edge.edge_type != "correlation":
-                continue
-            if not edge.source.startswith("memory:") or not edge.target.startswith("memory:"):
-                continue
-            rank = self._correlation_edge_rank(edge)
-            reasons = edge.metadata.get("reasons")
-            reason_set = set(reasons) if isinstance(reasons, list) else set()
-            for node_id, other_id in ((edge.source, edge.target), (edge.target, edge.source)):
-                stats[node_id]["degree"] += 1
-                stats[node_id]["centrality"] += rank
-                stats[node_id]["neighbors"].add(other_id)
-                if "vector_neighbor" in reason_set:
-                    stats[node_id]["vector_degree"] += 1
-                if "semantic_overlap" in reason_set or "shared_entity" in reason_set:
-                    stats[node_id]["semantic_degree"] += 1
-
-        if not stats:
-            return
-
-        ranked = sorted(
-            stats.items(),
-            key=lambda item: (-item[1]["centrality"], item[0]),
-        )
-        centroid_count = max(1, min(8, len(ranked) // 10 or 1))
-        centroid_ids = {
-            node_id for node_id, node_stats in ranked[:centroid_count] if node_stats["degree"] >= 3
-        }
-        max_centrality = max(float(item["centrality"]) for item in stats.values()) or 1.0
-
-        for node_id, node_stats in stats.items():
-            node = nodes.get(node_id)
-            if node is None:
-                continue
-            centrality = float(node_stats["centrality"])
-            graph_metadata = {
-                "degree": node_stats["degree"],
-                "vector_degree": node_stats["vector_degree"],
-                "semantic_degree": node_stats["semantic_degree"],
-                "centrality": round(centrality, 4),
-                "centrality_normalized": round(centrality / max_centrality, 4),
-            }
-            if node_id in centroid_ids:
-                graph_metadata["role"] = "centroid_candidate"
-            elif (
-                node_stats["vector_degree"] >= 2
-                and node_stats["semantic_degree"] < node_stats["degree"]
-            ):
-                graph_metadata["role"] = "grouping_opportunity"
-
-            node.metadata["graph"] = graph_metadata
-            node.weight = max(
-                node.weight,
-                1.0 + min(1.25, graph_metadata["centrality_normalized"]),
-            )
+        self._correlation_graph_pipeline().annotate_graph_insights(nodes, edges)
 
     def _build_grouping_opportunities(
         self,
@@ -1664,67 +1399,12 @@ class OneBrainService:
         limit: int,
         min_size: int,
     ) -> list[GraphGroupingOpportunity]:
-        if limit <= 0:
-            return []
-
-        correlation_edges = [
-            edge
-            for edge in edges.values()
-            if edge.edge_type == "correlation"
-            and edge.source.startswith("memory:")
-            and edge.target.startswith("memory:")
-            and edge.source in nodes
-            and edge.target in nodes
-        ]
-        if not correlation_edges:
-            return []
-
-        adjacency: dict[str, list[GraphEdge]] = defaultdict(list)
-        for edge in correlation_edges:
-            adjacency[edge.source].append(edge)
-            adjacency[edge.target].append(edge)
-
-        candidates: list[GraphGroupingOpportunity] = []
-        for seed, seed_edges in adjacency.items():
-            if len(seed_edges) + 1 < min_size:
-                continue
-            ranked_edges = sorted(
-                seed_edges,
-                key=lambda item: (-self._correlation_edge_rank(item), item.id),
-            )
-            member_ids = {seed}
-            max_member_count = max(min_size, min(12, min_size + 6))
-            for edge in ranked_edges:
-                member_ids.add(edge.target if edge.source == seed else edge.source)
-                if len(member_ids) >= max_member_count:
-                    break
-            if len(member_ids) < min_size:
-                continue
-            candidate = self._grouping_opportunity_for_members(
-                nodes,
-                correlation_edges,
-                member_ids,
-                centroid_node_id=seed,
-            )
-            if candidate:
-                candidates.append(candidate)
-
-        selected: list[GraphGroupingOpportunity] = []
-        selected_members: list[set[str]] = []
-        for candidate in sorted(
-            candidates,
-            key=lambda item: (-item.score, -item.member_count, item.label, item.id),
-        ):
-            candidate_members = set(candidate.member_node_ids)
-            if any(
-                self._jaccard(candidate_members, members) >= 0.72 for members in selected_members
-            ):
-                continue
-            selected.append(candidate)
-            selected_members.append(candidate_members)
-            if len(selected) >= limit:
-                break
-        return selected
+        return self._correlation_grouping_builder().build(
+            nodes,
+            edges,
+            limit=limit,
+            min_size=min_size,
+        )
 
     def _grouping_opportunity_for_members(
         self,
@@ -1734,55 +1414,11 @@ class OneBrainService:
         *,
         centroid_node_id: str,
     ) -> GraphGroupingOpportunity | None:
-        internal_edges: list[GraphEdge] = []
-        external_edges = 0
-        for edge in correlation_edges:
-            source_in = edge.source in member_ids
-            target_in = edge.target in member_ids
-            if source_in and target_in:
-                internal_edges.append(edge)
-            elif source_in or target_in:
-                external_edges += 1
-
-        if len(internal_edges) < max(2, len(member_ids) - 1):
-            return None
-
-        possible_edges = max(1, len(member_ids) * (len(member_ids) - 1) // 2)
-        internal_rank = sum(self._correlation_edge_rank(edge) for edge in internal_edges)
-        average_rank = internal_rank / max(1, len(internal_edges))
-        cohesion = min(1.0, (len(internal_edges) / possible_edges) * 1.8)
-        separation = len(internal_edges) / max(1, len(internal_edges) + external_edges)
-        score = (
-            average_rank * (0.65 + cohesion) * (0.65 + separation) * math.log2(len(member_ids) + 1)
-        )
-
-        keywords = self._grouping_keywords(nodes, internal_edges, member_ids)
-        label = self._grouping_label(keywords, nodes[centroid_node_id].label)
-        digest = sha256("|".join(sorted(member_ids)).encode("utf-8")).hexdigest()[:12]
-        reasons = self._grouping_reasons(internal_edges)
-        member_labels = [nodes[node_id].label for node_id in sorted(member_ids)]
-        summary = (
-            f"{len(member_ids)} memories form a candidate cluster around "
-            f"{', '.join(keywords[:3]) if keywords else nodes[centroid_node_id].label}."
-        )
-        return GraphGroupingOpportunity(
-            id=digest,
-            label=label,
-            summary=summary,
-            member_node_ids=sorted(member_ids),
-            member_count=len(member_ids),
+        return self._correlation_grouping_builder().opportunity_for_members(
+            nodes,
+            correlation_edges,
+            member_ids,
             centroid_node_id=centroid_node_id,
-            score=round(score, 4),
-            cohesion=round(cohesion, 4),
-            separation=round(separation, 4),
-            reasons=reasons,
-            keywords=keywords,
-            metadata={
-                "internal_edges": len(internal_edges),
-                "external_edges": external_edges,
-                "average_edge_rank": round(average_rank, 4),
-                "sample_members": member_labels[:8],
-            },
         )
 
     def _add_grouping_opportunity_nodes(
@@ -1889,7 +1525,7 @@ class OneBrainService:
                 "grouping:opportunity",
                 "knowledge:aggregate",
             ],
-            confidence=min(0.95, max(0.62, 0.55 + opportunity.cohesion * 0.25)),
+            confidence=self._correlation_score_policy().aggregate_confidence(opportunity.cohesion),
             source=SourceRef(source_type=request.source_type, source_ref=source_ref),
             entities=[
                 EntityInput(
@@ -1905,6 +1541,9 @@ class OneBrainService:
             metadata={
                 "aggregation_kind": "graph_grouping_opportunity",
                 "aggregation_version": "v1",
+                "score_version": opportunity.metadata.get(
+                    "score_version", self._correlation_score_policy().score_version
+                ),
                 "opportunity": opportunity.model_dump(mode="json"),
                 "member_memory_ids": member_ids,
                 "member_titles": member_titles,
@@ -1985,85 +1624,26 @@ class OneBrainService:
         internal_edges: list[GraphEdge],
         member_ids: set[str],
     ) -> list[str]:
-        weights: defaultdict[str, float] = defaultdict(float)
-        for edge in internal_edges:
-            rank = self._correlation_edge_rank(edge)
-            facets = edge.metadata.get("shared_facets")
-            entities = edge.metadata.get("shared_entities")
-            facet_values = facets if isinstance(facets, list) else []
-            entity_values = entities if isinstance(entities, list) else []
-            for facet in facet_values:
-                keyword = self._keyword_from_grouping_facet(str(facet))
-                if keyword:
-                    weights[keyword] += rank
-            for entity in entity_values:
-                keyword = self._humanize_grouping_keyword(str(entity))
-                if keyword:
-                    weights[keyword] += rank * 0.8
-
-        for node_id in member_ids:
-            for term in self._correlation_terms(nodes[node_id].label, limit=8):
-                weights[self._humanize_grouping_keyword(term)] += 0.35
-
-        return [
-            keyword
-            for keyword, _ in sorted(
-                weights.items(),
-                key=lambda item: (-item[1], item[0]),
-            )[:8]
-        ]
+        return self._correlation_grouping_builder().grouping_keywords(
+            nodes,
+            internal_edges,
+            member_ids,
+        )
 
     def _keyword_from_grouping_facet(self, facet: str) -> str | None:
-        if ":" not in facet:
-            return None
-        prefix, value = facet.split(":", 1)
-        if prefix not in {"term", "phrase", "tag"}:
-            return None
-        return self._humanize_grouping_keyword(value)
+        return keyword_from_grouping_facet(facet)
 
     def _humanize_grouping_keyword(self, value: str) -> str:
-        tokens = [
-            token
-            for token in re.split(r"[\s_:/=-]+", normalize_name(value))
-            if self._is_correlation_term(token)
-        ][:4]
-        acronyms = {
-            "acl",
-            "ado",
-            "api",
-            "ci",
-            "css",
-            "e2e",
-            "gdpr",
-            "http",
-            "lgpd",
-            "mcp",
-            "rpa",
-            "sso",
-            "tms",
-            "xml",
-        }
-        return " ".join(token.upper() if token in acronyms else token.title() for token in tokens)
+        return humanize_grouping_keyword(value)
 
     def _grouping_label(self, keywords: list[str], fallback: str) -> str:
-        if keywords:
-            return f"{' / '.join(keywords[:3])} Cluster"
-        return f"{fallback} Cluster"
+        return grouping_label(keywords, fallback)
 
     def _grouping_reasons(self, internal_edges: list[GraphEdge]) -> list[str]:
-        reasons: set[str] = set()
-        for edge in internal_edges:
-            raw_reasons = edge.metadata.get("reasons")
-            if isinstance(raw_reasons, list):
-                reasons.update(str(reason) for reason in raw_reasons)
-            elif edge.label:
-                reasons.add(edge.label)
-        return sorted(reasons)
+        return grouping_reasons(internal_edges)
 
     def _jaccard(self, left: set[str], right: set[str]) -> float:
-        if not left or not right:
-            return 0.0
-        return len(left & right) / len(left | right)
+        return jaccard(left, right)
 
     def _correlation_edge_count(self, edges: dict[str, GraphEdge]) -> int:
         return sum(1 for edge in edges.values() if edge.edge_type == "correlation")
