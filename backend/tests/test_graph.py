@@ -84,6 +84,7 @@ def test_graph_request_normalizes_blank_query() -> None:
     assert request.include_relations is True
     assert request.include_correlations is True
     assert request.include_vector_correlations is True
+    assert request.scoring_profile == "deterministic-v1"
     assert request.max_correlation_degree == 6
     assert request.vector_neighbors_per_memory == 4
     assert request.include_grouping_opportunities is True
@@ -443,6 +444,76 @@ async def test_vector_correlation_edges_use_rag_neighbors() -> None:
     assert edge.metadata["reasons"] == ["vector_neighbor"]
     assert edge.metadata["vector_similarity"] == 0.91
     assert edge.metadata["score_version"] == "deterministic-v1"
+    assert edge.metadata["scoring_profile"] == "deterministic-v1"
+
+
+@pytest.mark.asyncio
+async def test_vector_correlation_edges_use_requested_scoring_profile() -> None:
+    service = OneBrainService.__new__(OneBrainService)
+    left_id = uuid.uuid4()
+    right_id = uuid.uuid4()
+    left = memory_for_test(
+        id=left_id,
+        memory_type="context",
+        title="Payment exception policy",
+        content="Payment exception policy",
+        content_hash="a",
+        scope={},
+        tags=[],
+        confidence=0.8,
+        source_type="manual",
+    )
+    right = memory_for_test(
+        id=right_id,
+        memory_type="context",
+        title="Payment exception rule",
+        content="Payment exception rule",
+        content_hash="b",
+        scope={},
+        tags=[],
+        confidence=0.8,
+        source_type="manual",
+    )
+
+    class FakeEmbeddings:
+        async def embed(self, texts):
+            assert len(texts) == 2
+            return [[1.0, 0.0], [0.95, 0.05]]
+
+    class FakeVectorStore:
+        async def search(self, *, vector, limit, filters):
+            if vector == [1.0, 0.0]:
+                return [
+                    SimpleNamespace(memory_id=left_id, score=1.0),
+                    SimpleNamespace(memory_id=right_id, score=0.8),
+                ]
+            return [
+                SimpleNamespace(memory_id=right_id, score=1.0),
+                SimpleNamespace(memory_id=left_id, score=0.8),
+            ]
+
+    service._embeddings = FakeEmbeddings()
+    service._vector_store = FakeVectorStore()
+    edges: dict[str, GraphEdge] = {}
+
+    await service._add_vector_correlation_edges(
+        edges,
+        [left, right],
+        request=GraphRequest(
+            scoring_profile="deterministic-v2",
+            include_entities=False,
+            include_relations=False,
+            vector_neighbors_per_memory=2,
+            vector_similarity_threshold=0.75,
+        ),
+        limit=10,
+        max_degree=6,
+    )
+
+    edge = next(iter(edges.values()))
+    assert edge.metadata["score"] == 8.4
+    assert edge.metadata["score_version"] == "deterministic-v2"
+    assert edge.metadata["scoring_profile"] == "deterministic-v2"
 
 
 @pytest.mark.asyncio

@@ -105,6 +105,10 @@ def test_django_graph_aggregation_job_status_is_public(monkeypatch, tmp_path) ->
     assert payload["status"] == "success"
     assert payload["last_run"]["run_count"] == 3
     assert payload["configuration"]["limit"] == 500
+    assert payload["configuration"]["scoring_profile"] == "deterministic-v1"
+    assert any(
+        profile["key"] == "logistic-regression-v1" for profile in payload["scoring_profiles"]
+    )
 
 
 def test_django_post_accepts_bearer_api_key() -> None:

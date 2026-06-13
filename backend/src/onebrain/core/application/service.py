@@ -48,11 +48,13 @@ from onebrain.core.contracts.schemas import (
     SourceRef,
 )
 from onebrain.core.correlation import (
+    DEFAULT_CORRELATION_SCORING_PROFILE,
     GENERIC_MEMORY_TITLES,
     CorrelationGroupingBuilder,
     CorrelationPipeline,
     CorrelationScorer,
     correlation_phrases,
+    correlation_scorer_for_profile,
     correlation_terms,
     grouping_label,
     grouping_reasons,
@@ -65,6 +67,7 @@ from onebrain.core.correlation import (
     jaccard,
     keyword_from_grouping_facet,
     memory_correlation_facets,
+    normalize_correlation_scoring_profile,
 )
 from onebrain.infrastructure.embeddings import EmbeddingProvider
 from onebrain.infrastructure.models import (
@@ -93,25 +96,49 @@ class OneBrainService:
         self._session_factory = session_factory
         self._embeddings = embeddings
         self._vector_store = vector_store
-        self._correlation_scorer = CorrelationScorer()
+        self._correlation_scorers: dict[str, CorrelationScorer] = {}
+        self._correlation_scorer = self._correlation_score_policy()
         self._correlation_pipeline = CorrelationPipeline(self._correlation_scorer)
         self._correlation_grouping = CorrelationGroupingBuilder(self._correlation_scorer)
 
-    def _correlation_score_policy(self) -> CorrelationScorer:
-        scorer = getattr(self, "_correlation_scorer", None)
+    def _correlation_score_policy(
+        self,
+        scoring_profile: str | None = None,
+    ) -> CorrelationScorer:
+        profile_key = normalize_correlation_scoring_profile(
+            scoring_profile or DEFAULT_CORRELATION_SCORING_PROFILE,
+            require_executable=True,
+        )
+        scorers = getattr(self, "_correlation_scorers", None)
+        if scorers is None:
+            scorers = {}
+            self._correlation_scorers = scorers
+        scorer = scorers.get(profile_key)
         if scorer is None:
-            scorer = CorrelationScorer()
+            scorer = correlation_scorer_for_profile(profile_key)
+            scorers[scorer.scoring_profile] = scorer
+        if scorer.scoring_profile == DEFAULT_CORRELATION_SCORING_PROFILE:
             self._correlation_scorer = scorer
         return scorer
 
-    def _correlation_graph_pipeline(self) -> CorrelationPipeline:
+    def _correlation_graph_pipeline(
+        self,
+        scorer: CorrelationScorer | None = None,
+    ) -> CorrelationPipeline:
+        if scorer is not None:
+            return CorrelationPipeline(scorer)
         pipeline = getattr(self, "_correlation_pipeline", None)
         if pipeline is None:
             pipeline = CorrelationPipeline(self._correlation_score_policy())
             self._correlation_pipeline = pipeline
         return pipeline
 
-    def _correlation_grouping_builder(self) -> CorrelationGroupingBuilder:
+    def _correlation_grouping_builder(
+        self,
+        scorer: CorrelationScorer | None = None,
+    ) -> CorrelationGroupingBuilder:
+        if scorer is not None:
+            return CorrelationGroupingBuilder(scorer)
         grouping = getattr(self, "_correlation_grouping", None)
         if grouping is None:
             grouping = CorrelationGroupingBuilder(self._correlation_score_policy())
@@ -422,6 +449,7 @@ class OneBrainService:
         return CorrelationResponse(correlations=correlations[: request.limit])
 
     async def build_graph(self, request: GraphRequest) -> GraphResponse:
+        scorer = self._correlation_score_policy(request.scoring_profile)
         candidate_memories = await self._graph_memories(request)
         memories = [memory for memory in candidate_memories if self._is_graph_memory(memory)]
         omitted = len(candidate_memories) - len(memories)
@@ -506,6 +534,7 @@ class OneBrainService:
                     edges,
                     entity_rows,
                     limit=request.correlation_limit,
+                    scorer=scorer,
                 )
             remaining = request.correlation_limit - self._correlation_edge_count(edges)
             if remaining > 0 and request.include_vector_correlations:
@@ -516,6 +545,7 @@ class OneBrainService:
                     request=request,
                     limit=vector_limit,
                     max_degree=request.max_correlation_degree,
+                    scorer=scorer,
                 )
             remaining = request.correlation_limit - self._correlation_edge_count(edges)
             if remaining > 0:
@@ -524,13 +554,15 @@ class OneBrainService:
                     memories,
                     limit=remaining,
                     max_degree=request.max_correlation_degree,
+                    scorer=scorer,
                 )
             self._prune_correlation_edges(
                 edges,
                 limit=request.correlation_limit,
                 max_degree=request.max_correlation_degree,
+                scorer=scorer,
             )
-            self._annotate_graph_insights(nodes, edges)
+            self._annotate_graph_insights(nodes, edges, scorer=scorer)
 
         grouping_opportunities: list[GraphGroupingOpportunity] = []
         if request.include_grouping_opportunities and request.include_correlations:
@@ -539,11 +571,14 @@ class OneBrainService:
                 edges,
                 limit=request.grouping_limit,
                 min_size=request.grouping_min_size,
+                scorer=scorer,
             )
             self._add_grouping_opportunity_nodes(nodes, edges, grouping_opportunities)
 
         return GraphResponse(
             query=request.query,
+            scoring_profile=scorer.scoring_profile,
+            score_version=scorer.score_version,
             nodes=sorted(nodes.values(), key=lambda item: (item.node_type, item.label)),
             edges=sorted(edges.values(), key=lambda item: (item.edge_type, item.label or "")),
             memory_count=len(memories),
@@ -568,6 +603,7 @@ class OneBrainService:
                 ),
             }
         )
+        scorer = self._correlation_score_policy(graph_request.scoring_profile)
         graph = await self.build_graph(graph_request)
 
         items: list[GraphAggregationItem] = []
@@ -645,9 +681,7 @@ class OneBrainService:
                     from_memory_id=aggregate_memory.id,
                     to_memory_id=member.id,
                     link_type=request.link_type,
-                    confidence=self._correlation_score_policy().member_link_confidence(
-                        opportunity.cohesion
-                    ),
+                    confidence=scorer.member_link_confidence(opportunity.cohesion),
                     order_index=index,
                     evidence=opportunity.summary,
                     metadata={
@@ -655,8 +689,9 @@ class OneBrainService:
                         "opportunity_id": opportunity.id,
                         "opportunity_score": opportunity.score,
                         "score_version": opportunity.metadata.get(
-                            "score_version", self._correlation_score_policy().score_version
+                            "score_version", scorer.score_version
                         ),
+                        "scoring_profile": graph_request.scoring_profile,
                     },
                     actor=actor,
                 )
@@ -1041,7 +1076,9 @@ class OneBrainService:
         entity_rows: list[tuple[uuid.UUID, str, Entity]],
         *,
         limit: int,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
+        scorer = scorer or self._correlation_score_policy()
         memories_by_entity: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
         entity_names: dict[uuid.UUID, str] = {}
         for memory_id, _, entity in entity_rows:
@@ -1065,7 +1102,7 @@ class OneBrainService:
             if index >= limit:
                 break
             shared = sorted(shared_entities)
-            edge_score = self._correlation_score_policy().shared_entity_edge(len(shared))
+            edge_score = scorer.shared_entity_edge(len(shared))
             edge = GraphEdge(
                 id=f"correlation:{left}:{right}",
                 source=f"memory:{left}",
@@ -1078,7 +1115,8 @@ class OneBrainService:
                     "reasons": ["shared_entity"],
                     "shared_entities": shared[:20],
                     "score": edge_score.score,
-                    "score_version": self._correlation_score_policy().score_version,
+                    "score_version": scorer.score_version,
+                    "scoring_profile": scorer.scoring_profile,
                 },
             )
             edges[edge.id] = edge
@@ -1091,7 +1129,9 @@ class OneBrainService:
         request: GraphRequest,
         limit: int,
         max_degree: int,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
+        scorer = scorer or self._correlation_score_policy(request.scoring_profile)
         candidate_memories = [
             memory for memory in memories if not self._is_low_signal_correlation_memory(memory)
         ]
@@ -1156,7 +1196,13 @@ class OneBrainService:
                 degree_by_memory[left] >= max_degree or degree_by_memory[right] >= max_degree
             ):
                 continue
-            is_new = self._upsert_vector_correlation_edge(edges, left, right, similarity)
+            is_new = self._upsert_vector_correlation_edge(
+                edges,
+                left,
+                right,
+                similarity,
+                scorer=scorer,
+            )
             if is_new:
                 degree_by_memory[left] += 1
                 degree_by_memory[right] += 1
@@ -1168,9 +1214,12 @@ class OneBrainService:
         left: str,
         right: str,
         similarity: float,
+        *,
+        scorer: CorrelationScorer | None = None,
     ) -> bool:
+        scorer = scorer or self._correlation_score_policy()
         edge_id = f"correlation:{left}:{right}"
-        edge_score = self._correlation_score_policy().vector_edge(similarity)
+        edge_score = scorer.vector_edge(similarity)
         if edge_id in edges:
             edge = edges[edge_id]
             self._add_edge_reason(edge, "vector_neighbor")
@@ -1179,9 +1228,10 @@ class OneBrainService:
             edge.confidence = max(edge.confidence or 0.0, edge_score.confidence)
             edge.metadata["vector_similarity"] = round(similarity, 6)
             edge.metadata["score"] = round(
-                max(self._correlation_edge_rank(edge), edge_score.score), 4
+                max(self._correlation_edge_rank(edge, scorer=scorer), edge_score.score), 4
             )
-            edge.metadata["score_version"] = self._correlation_score_policy().score_version
+            edge.metadata["score_version"] = scorer.score_version
+            edge.metadata["scoring_profile"] = scorer.scoring_profile
             return False
 
         edges[edge_id] = GraphEdge(
@@ -1196,7 +1246,8 @@ class OneBrainService:
                 "reasons": ["vector_neighbor"],
                 "vector_similarity": round(similarity, 6),
                 "score": edge_score.score,
-                "score_version": self._correlation_score_policy().score_version,
+                "score_version": scorer.score_version,
+                "scoring_profile": scorer.scoring_profile,
             },
         )
         return True
@@ -1208,7 +1259,9 @@ class OneBrainService:
         *,
         limit: int,
         max_degree: int | None = None,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
+        scorer = scorer or self._correlation_score_policy()
         facets_by_memory: dict[uuid.UUID, dict[str, float]] = {
             memory.id: self._memory_correlation_facets(memory) for memory in memories
         }
@@ -1225,7 +1278,7 @@ class OneBrainService:
             if facet.startswith("context:"):
                 continue
             facet_frequency = len(memory_ids)
-            if facet_frequency < 2 or facet_frequency > self._max_correlation_facet_frequency(
+            if facet_frequency < 2 or facet_frequency > scorer.max_facet_frequency(
                 facet, memory_count
             ):
                 continue
@@ -1235,7 +1288,7 @@ class OneBrainService:
                     facets_by_memory[left].get(facet, 0.0),
                     facets_by_memory[right].get(facet, 0.0),
                 )
-                contribution = self._correlation_score_policy().facet_contribution(
+                contribution = scorer.facet_contribution(
                     shared_weight=shared_weight,
                     facet_frequency=facet_frequency,
                     memory_count=memory_count,
@@ -1250,12 +1303,12 @@ class OneBrainService:
                 facet_scores.items(),
                 key=lambda item: (-item[1], item[0]),
             )
-            score = self._correlation_score_policy().score_facets(ranked_scored_facets)
+            score = scorer.score_facets(ranked_scored_facets)
             facets = pair_facets[(left, right)]
-            if not self._is_meaningful_correlation(
-                score,
-                facets,
-                pair_facet_weights[(left, right)],
+            if not scorer.is_meaningful_facet_correlation(
+                score=score,
+                facets=facets,
+                facet_weights=pair_facet_weights[(left, right)],
             ):
                 continue
             candidates.append((left, right, score, ranked_scored_facets))
@@ -1275,9 +1328,14 @@ class OneBrainService:
             edge_id = f"correlation:{left}:{right}"
             ranked_facets = [facet for facet, _ in ranked_scored_facets]
             if edge_id in edges:
-                self._merge_facet_correlation_edge(edges[edge_id], ranked_facets, score)
+                self._merge_facet_correlation_edge(
+                    edges[edge_id],
+                    ranked_facets,
+                    score,
+                    scorer=scorer,
+                )
                 continue
-            edge_score = self._correlation_score_policy().facet_edge(score)
+            edge_score = scorer.facet_edge(score)
             edges[edge_id] = GraphEdge(
                 id=edge_id,
                 source=f"memory:{left}",
@@ -1290,7 +1348,8 @@ class OneBrainService:
                     "reasons": ["semantic_overlap"],
                     "shared_facets": ranked_facets[:20],
                     "score": edge_score.score,
-                    "score_version": self._correlation_score_policy().score_version,
+                    "score_version": scorer.score_version,
+                    "scoring_profile": scorer.scoring_profile,
                 },
             )
             degree_by_memory[left] += 1
@@ -1302,7 +1361,10 @@ class OneBrainService:
         edge: GraphEdge,
         ranked_facets: list[str],
         score: float,
+        *,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
+        scorer = scorer or self._correlation_score_policy()
         self._add_edge_reason(edge, "semantic_overlap")
         if edge.label == "vector_neighbor":
             edge.label = "semantic_neighbor"
@@ -1310,10 +1372,13 @@ class OneBrainService:
         if not isinstance(existing_facets, list):
             existing_facets = []
         merged_facets = list(dict.fromkeys([*existing_facets, *ranked_facets]))
-        edge_score = self._correlation_score_policy().facet_edge(score)
+        edge_score = scorer.facet_edge(score)
         edge.metadata["shared_facets"] = merged_facets[:20]
-        edge.metadata["score"] = round(max(self._correlation_edge_rank(edge), edge_score.score), 4)
-        edge.metadata["score_version"] = self._correlation_score_policy().score_version
+        edge.metadata["score"] = round(
+            max(self._correlation_edge_rank(edge, scorer=scorer), edge_score.score), 4
+        )
+        edge.metadata["score_version"] = scorer.score_version
+        edge.metadata["scoring_profile"] = scorer.scoring_profile
         edge.weight = max(edge.weight, edge_score.weight)
         edge.confidence = max(edge.confidence or 0.0, edge_score.confidence)
 
@@ -1365,8 +1430,9 @@ class OneBrainService:
         *,
         limit: int,
         max_degree: int,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
-        self._correlation_graph_pipeline().prune_edges(
+        self._correlation_graph_pipeline(scorer).prune_edges(
             edges,
             limit=limit,
             max_degree=max_degree,
@@ -1381,15 +1447,22 @@ class OneBrainService:
     def _correlation_node_memory_key(self, node_id: str) -> str:
         return self._correlation_graph_pipeline().node_memory_key(node_id)
 
-    def _correlation_edge_rank(self, edge: GraphEdge) -> float:
-        return self._correlation_score_policy().edge_rank(edge)
+    def _correlation_edge_rank(
+        self,
+        edge: GraphEdge,
+        *,
+        scorer: CorrelationScorer | None = None,
+    ) -> float:
+        return (scorer or self._correlation_score_policy()).edge_rank(edge)
 
     def _annotate_graph_insights(
         self,
         nodes: dict[str, GraphNode],
         edges: dict[str, GraphEdge],
+        *,
+        scorer: CorrelationScorer | None = None,
     ) -> None:
-        self._correlation_graph_pipeline().annotate_graph_insights(nodes, edges)
+        self._correlation_graph_pipeline(scorer).annotate_graph_insights(nodes, edges)
 
     def _build_grouping_opportunities(
         self,
@@ -1398,8 +1471,9 @@ class OneBrainService:
         *,
         limit: int,
         min_size: int,
+        scorer: CorrelationScorer | None = None,
     ) -> list[GraphGroupingOpportunity]:
-        return self._correlation_grouping_builder().build(
+        return self._correlation_grouping_builder(scorer).build(
             nodes,
             edges,
             limit=limit,
@@ -1413,8 +1487,9 @@ class OneBrainService:
         member_ids: set[str],
         *,
         centroid_node_id: str,
+        scorer: CorrelationScorer | None = None,
     ) -> GraphGroupingOpportunity | None:
-        return self._correlation_grouping_builder().opportunity_for_members(
+        return self._correlation_grouping_builder(scorer).opportunity_for_members(
             nodes,
             correlation_edges,
             member_ids,
@@ -1507,6 +1582,7 @@ class OneBrainService:
         *,
         source_ref: str,
     ) -> MemoryCreate:
+        scorer = self._correlation_score_policy(request.graph.scoring_profile)
         scope = (
             request.scope
             or request.graph.filters.scope
@@ -1525,7 +1601,7 @@ class OneBrainService:
                 "grouping:opportunity",
                 "knowledge:aggregate",
             ],
-            confidence=self._correlation_score_policy().aggregate_confidence(opportunity.cohesion),
+            confidence=scorer.aggregate_confidence(opportunity.cohesion),
             source=SourceRef(source_type=request.source_type, source_ref=source_ref),
             entities=[
                 EntityInput(
@@ -1542,8 +1618,9 @@ class OneBrainService:
                 "aggregation_kind": "graph_grouping_opportunity",
                 "aggregation_version": "v1",
                 "score_version": opportunity.metadata.get(
-                    "score_version", self._correlation_score_policy().score_version
+                    "score_version", scorer.score_version
                 ),
+                "scoring_profile": request.graph.scoring_profile,
                 "opportunity": opportunity.model_dump(mode="json"),
                 "member_memory_ids": member_ids,
                 "member_titles": member_titles,

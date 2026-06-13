@@ -53,11 +53,27 @@ Correlation and grouping scores are comparable only within the same scoring algo
 scope, and input corpus. Current deterministic scores are versioned as `deterministic-v1` in edge and
 grouping metadata.
 
+The graph request, aggregation job, and Web Settings surface use a `scoring_profile` value to select
+the scorer:
+
+| Profile | Status | Purpose |
+| --- | --- | --- |
+| `deterministic-v1` | available | Default production-safe scorer for shared entities, semantic facets, and vector neighbors. |
+| `deterministic-v2` | experimental | Deterministic A/B profile with richer facet tail weighting and profile-scoped metadata. |
+| `logistic-regression-v1` | planned | Supervised edge probability scorer once accepted/rejected link data is available. |
+| `decision-tree-v1` | planned | Explainable rules learned from correlation outcomes and operator feedback. |
+| `domain-centroid-v1` | planned | Domain and scope-aware centroid assignment for cluster membership. |
+| `link-classifier-v1` | planned | Explicit relation/link-type prediction and confidence scoring. |
+
+Planned profiles are listed in the API and Web Settings catalog but are not executable until a
+training job writes versioned model artifacts. This keeps future strategies visible without silently
+falling back to deterministic scoring.
+
 Before changing weights, thresholds, or formulas:
 
 - keep old score metadata readable;
 - bump the score version;
-- compare old and new scores in a scoped dry run;
+- compare old and new profiles in a scoped dry run;
 - avoid treating score alone as proof without edge reasons and source evidence.
 
 ## Operator Questions
@@ -78,6 +94,7 @@ The graph aggregation job finds grouping opportunities and can materialize them 
 ```powershell
 uv run onebrain-jobs aggregate_graph_memories `
   --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}' `
+  --scoring-profile deterministic-v1 `
   --grouping-limit 25 `
   --correlation-limit 750
 ```
@@ -89,6 +106,7 @@ docker compose run --rm onebrain-jobs `
   onebrain-jobs aggregate_graph_memories `
   --scope-json '{"catalog":"private-engineering-catalog","source":"github-private-catalog"}' `
   --dry-run `
+  --scoring-profile deterministic-v1 `
   --min-score 8 `
   --max-degree 12 `
   --grouping-min-size 3 `

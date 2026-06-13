@@ -168,21 +168,36 @@ repo development but noisy for OneBrain knowledge correlation.
 ## 5. Materialize Graph Aggregates
 
 Run graph aggregation batch by batch with stable `batch` scope values. Use dry-run output first when
-comparing scoring behavior across corpora or score versions.
+comparing scoring behavior across corpora or scoring profiles.
 
 ```powershell
 docker compose run --rm onebrain-jobs `
   onebrain-jobs aggregate_graph_memories `
   --scope-json '{"lab":"corpus-correlation"}' `
   --dry-run `
+  --scoring-profile deterministic-v1 `
+  --min-score 8 `
+  --grouping-limit 25 `
+  --correlation-limit 1000
+```
+
+For A/B scoring checks, keep the same scope and limits and change only the profile:
+
+```powershell
+docker compose run --rm onebrain-jobs `
+  onebrain-jobs aggregate_graph_memories `
+  --scope-json '{"lab":"corpus-correlation"}' `
+  --dry-run `
+  --scoring-profile deterministic-v2 `
   --min-score 8 `
   --grouping-limit 25 `
   --correlation-limit 1000
 ```
 
 After reviewing the dry run, remove `--dry-run` to materialize aggregate memories. Record the
-`score_version` reported in edge and grouping metadata in your lab notes whenever comparing
-experiments. Scores are comparable only within the same scoring version, scope, and corpus batch.
+`scoring_profile` and `score_version` reported in edge and grouping metadata in your lab notes
+whenever comparing experiments. Scores are comparable only within the same scoring profile, scope,
+and corpus batch.
 
 ## 6. Inspect
 
@@ -197,7 +212,7 @@ Useful checks after each batch:
 - memory count by type
 - source distribution by repo
 - graph grouping opportunities
-- score version and threshold used for the run
+- scoring profile, score version, and threshold used for the run
 - noisy generic `context` memories
 - duplicated source refs
 - correlations that connect unrelated repos

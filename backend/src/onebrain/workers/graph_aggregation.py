@@ -12,6 +12,11 @@ from onebrain.core.contracts.schemas import (
     GraphRequest,
     SearchFilters,
 )
+from onebrain.core.correlation import (
+    DEFAULT_CORRELATION_SCORING_PROFILE,
+    executable_correlation_scoring_profile_keys,
+    normalize_correlation_scoring_profile,
+)
 from onebrain.platform.runtime import close_runtime, get_runtime_service
 
 RuntimeCloser = Callable[[], Awaitable[None]]
@@ -24,6 +29,7 @@ class GraphAggregationJobConfig:
     scope: dict[str, Any] = field(default_factory=dict)
     aggregate_scope: dict[str, Any] = field(default_factory=dict)
     memory_type: str | None = "context"
+    scoring_profile: str = DEFAULT_CORRELATION_SCORING_PROFILE
     limit: int = 500
     correlation_limit: int = 750
     max_degree: int = 12
@@ -44,6 +50,10 @@ class GraphAggregationJobConfig:
                 "--aggregate-scope-json",
             ),
             memory_type=options.get("memory_type") or None,
+            scoring_profile=normalize_correlation_scoring_profile(
+                options.get("scoring_profile"),
+                require_executable=True,
+            ),
             limit=int(options.get("limit") or 500),
             correlation_limit=int(options.get("correlation_limit") or 750),
             max_degree=int(options.get("max_degree") or 12),
@@ -68,6 +78,10 @@ class GraphAggregationJobConfig:
                 "ONEBRAIN_GRAPH_AGGREGATION_AGGREGATE_SCOPE_JSON",
             ),
             memory_type=os.getenv("ONEBRAIN_GRAPH_AGGREGATION_MEMORY_TYPE", "context") or None,
+            scoring_profile=normalize_correlation_scoring_profile(
+                os.getenv("ONEBRAIN_GRAPH_AGGREGATION_SCORING_PROFILE"),
+                require_executable=True,
+            ),
             limit=int(os.getenv("ONEBRAIN_GRAPH_AGGREGATION_LIMIT", "500")),
             correlation_limit=int(os.getenv("ONEBRAIN_GRAPH_AGGREGATION_CORRELATION_LIMIT", "750")),
             max_degree=int(os.getenv("ONEBRAIN_GRAPH_AGGREGATION_MAX_DEGREE", "12")),
@@ -93,6 +107,7 @@ class GraphAggregationJobConfig:
                 include_relations=False,
                 include_correlations=True,
                 include_vector_correlations=True,
+                scoring_profile=self.scoring_profile,
                 correlation_limit=self.correlation_limit,
                 max_correlation_degree=self.max_degree,
                 include_grouping_opportunities=True,
@@ -141,6 +156,12 @@ def add_graph_aggregation_arguments(parser) -> None:
         help="Optional JSON scope override for aggregate memories.",
     )
     parser.add_argument("--memory-type", default=env_config.memory_type, help="Memory type filter.")
+    parser.add_argument(
+        "--scoring-profile",
+        choices=executable_correlation_scoring_profile_keys(),
+        default=env_config.scoring_profile,
+        help="Correlation scoring profile for graph edges and grouping.",
+    )
     parser.add_argument("--limit", type=int, default=env_config.limit, help="Memory scan limit.")
     parser.add_argument("--correlation-limit", type=int, default=env_config.correlation_limit)
     parser.add_argument("--max-degree", type=int, default=env_config.max_degree)

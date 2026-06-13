@@ -3,6 +3,7 @@ import type { GraphResponse, JobStatus } from "./types";
 export type GraphQuery = {
   query: string;
   memoryType: string;
+  scoringProfile: string;
   limit: number;
   correlationLimit: number;
   maxDegree: number;
@@ -21,6 +22,7 @@ export async function fetchGraph(query: GraphQuery): Promise<GraphResponse> {
       filters: {
         memory_types: query.memoryType ? [query.memoryType] : null
       },
+      scoring_profile: query.scoringProfile,
       include_entities: true,
       include_relations: true,
       include_correlations: true,

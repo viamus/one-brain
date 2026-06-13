@@ -8,7 +8,10 @@ from onebrain.core.correlation import (
     CORRELATION_SCORE_VERSION,
     CorrelationGroupingBuilder,
     CorrelationScorer,
+    correlation_scorer_for_profile,
+    correlation_scoring_profiles_payload,
     memory_correlation_facets,
+    normalize_correlation_scoring_profile,
 )
 from onebrain.infrastructure.models import Memory
 
@@ -22,6 +25,35 @@ def test_correlation_scorer_versions_shared_entity_rank() -> None:
     assert score.weight == pytest.approx(0.65)
     assert score.confidence == pytest.approx(0.7)
     assert score.score == 3.65
+
+
+def test_correlation_profile_catalog_exposes_future_strategies() -> None:
+    profiles = {profile["key"]: profile for profile in correlation_scoring_profiles_payload()}
+
+    assert profiles["deterministic-v1"]["status"] == "available"
+    assert profiles["deterministic-v2"]["status"] == "experimental"
+    assert profiles["logistic-regression-v1"]["requires_training"] is True
+    assert profiles["decision-tree-v1"]["requires_training"] is True
+    assert profiles["domain-centroid-v1"]["requires_training"] is True
+    assert profiles["link-classifier-v1"]["requires_training"] is True
+
+
+def test_correlation_profile_execution_requires_available_or_experimental() -> None:
+    with pytest.raises(ValueError, match="not executable"):
+        normalize_correlation_scoring_profile(
+            "logistic-regression-v1",
+            require_executable=True,
+        )
+
+
+def test_deterministic_v2_scorer_uses_profile_score_version() -> None:
+    scorer = correlation_scorer_for_profile("deterministic-v2")
+
+    score = scorer.vector_edge(0.8)
+
+    assert scorer.scoring_profile == "deterministic-v2"
+    assert scorer.score_version == "deterministic-v2"
+    assert score.score == 8.4
 
 
 def test_memory_correlation_facets_filter_noise_and_keep_specific_terms() -> None:

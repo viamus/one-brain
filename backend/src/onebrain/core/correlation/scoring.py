@@ -4,9 +4,15 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from onebrain.core.contracts.correlation_profiles import (
+    DEFAULT_CORRELATION_SCORING_PROFILE,
+    CorrelationScoringProfile,
+    correlation_scoring_profile,
+    normalize_correlation_scoring_profile,
+)
 from onebrain.core.contracts.schemas import GraphEdge
 
-CORRELATION_SCORE_VERSION = "deterministic-v1"
+CORRELATION_SCORE_VERSION = DEFAULT_CORRELATION_SCORING_PROFILE
 
 
 @dataclass(frozen=True)
@@ -19,7 +25,16 @@ class EdgeScore:
 class CorrelationScorer:
     """Versioned deterministic scoring policy for graph correlation edges and clusters."""
 
-    score_version = CORRELATION_SCORE_VERSION
+    def __init__(self, profile: CorrelationScoringProfile | None = None) -> None:
+        self.profile = profile or correlation_scoring_profile(CORRELATION_SCORE_VERSION)
+
+    @property
+    def score_version(self) -> str:
+        return self.profile.score_version
+
+    @property
+    def scoring_profile(self) -> str:
+        return self.profile.key
 
     def shared_entity_edge(self, shared_count: int) -> EdgeScore:
         weight = min(1.0, 0.35 + shared_count * 0.15)
@@ -112,7 +127,35 @@ class CorrelationScorer:
         return max(0.5, cohesion)
 
     def metadata(self, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-        metadata = {"score_version": self.score_version}
+        metadata = {
+            "score_version": self.score_version,
+            "scoring_profile": self.scoring_profile,
+        }
         if extra:
             metadata.update(extra)
         return metadata
+
+
+class DeterministicV2CorrelationScorer(CorrelationScorer):
+    """Experimental deterministic profile for local A/B scoring runs."""
+
+    def vector_edge(self, similarity: float) -> EdgeScore:
+        return EdgeScore(
+            score=round(similarity * 10.5, 4),
+            weight=min(1.0, 0.28 + similarity * 0.72),
+            confidence=min(1.0, 0.02 + similarity),
+        )
+
+    def score_facets(self, ranked_scored_facets: list[tuple[str, float]]) -> float:
+        score = 0.0
+        for index, (_, facet_score) in enumerate(ranked_scored_facets[:8]):
+            score += facet_score if index < 6 else facet_score * 0.65
+        return score
+
+
+def correlation_scorer_for_profile(profile_key: str | None) -> CorrelationScorer:
+    normalized = normalize_correlation_scoring_profile(profile_key, require_executable=True)
+    profile = correlation_scoring_profile(normalized)
+    if normalized == "deterministic-v2":
+        return DeterministicV2CorrelationScorer(profile)
+    return CorrelationScorer(profile)

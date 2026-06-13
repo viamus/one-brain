@@ -43,6 +43,7 @@ Open:
 
 - Web console: `http://localhost:8089/`
 - Web graph: `http://localhost:8089/graph`
+- Web settings: `http://localhost:8089/` then open `Settings`
 - API health: `http://localhost:8088/healthz`
 - API: `http://localhost:8088/api/v1`
 - MCP HTTP: `http://localhost:8090/mcp`
