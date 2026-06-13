@@ -16,6 +16,54 @@
       "webUrl": "https://dev.azure.com/example-org/Example%20Project/_git/example-service",
       "remoteUrl": "https://example-org@dev.azure.com/example-org/Example%20Project/_git/example-service",
       "defaultBranch": "refs/heads/main"
+    },
+    {
+      "id": "repo-web-guid",
+      "name": "example-web",
+      "project": {
+        "name": "Example Project"
+      },
+      "webUrl": "https://dev.azure.com/example-org/Example%20Project/_git/example-web",
+      "remoteUrl": "https://example-org@dev.azure.com/example-org/Example%20Project/_git/example-web",
+      "defaultBranch": "refs/heads/main"
+    }
+  ],
+  "repository_files": [
+    {
+      "project": "Example Project",
+      "repository": "example-service",
+      "path": "README.md",
+      "content": "# Example Service\n\nObserved documentation for the service purpose and local setup. Publishes the catalog API at https://api.example.com/catalog through EXAMPLE_SERVICE_URL."
+    },
+    {
+      "project": "Example Project",
+      "repository": "example-service",
+      "path": "package.json",
+      "content": "{ \"name\": \"example-service\", \"dependencies\": { \"express\": \"latest\" } }"
+    },
+    {
+      "project": "Example Project",
+      "repository": "example-service",
+      "path": "azure-pipelines.yml",
+      "content": "trigger:\n- main\n\nsteps:\n- script: npm test"
+    },
+    {
+      "project": "Example Project",
+      "repository": "example-web",
+      "path": "README.md",
+      "content": "# Example Web\n\nConsumes example-service through EXAMPLE_SERVICE_URL at https://api.example.com/catalog for the catalog journey."
+    },
+    {
+      "project": "Example Project",
+      "repository": "example-web",
+      "path": "package.json",
+      "content": "{ \"name\": \"example-web\", \"dependencies\": { \"react\": \"latest\", \"example-service-client\": \"latest\" } }"
+    },
+    {
+      "project": "Example Project",
+      "repository": "example-web",
+      "path": "azure-pipelines.yml",
+      "content": "trigger:\n- main\n\nsteps:\n- script: npm test"
     }
   ],
   "pull_requests": [

@@ -13,6 +13,8 @@ Use this skill to create a durable knowledge pack before ingesting anything into
 - `documents/`: generated Markdown documentation for repositories, wikis, work tracking, active people, and business-flow hypotheses.
 - `onebrain-import.jsonl`: one MemoryCreate-compatible JSON object per line.
 
+Read `references/completion-criteria.md` before every Azure DevOps, GitHub, Jira, local-repository, or multi-repository harvest. A harvest is not complete until every selected active repository has an individual Markdown document, an individual OneBrain memory, extracted clues, cross-repository references, or an explicit per-repository error.
+
 Read `references/subagent-orchestration.md` before running any multi-source, multi-project, multi-repository, Azure DevOps, GitHub, Jira, wiki, or broad local-repository harvest. Optimize broad queries through parallel agents/subagents whenever subagents are available and explicitly authorized by the user or environment. Keep the main agent responsible for planning, final merge, validation, and ingestion.
 
 Prefer the bundled script:
@@ -67,6 +69,8 @@ Some Codex environments expose subagent tools only when the user explicitly asks
 
 Keep one source of truth for final output. Subagents collect and normalize evidence, but the main agent owns deduplication, `manifest.json`, `onebrain-import.jsonl`, validation, and any OneBrain ingestion.
 
+Always run a cross-reference pass before calling the harvest complete. Map clues such as shared URLs, package names, environment variables, queues/topics, service names, API/client/worker terms, repository-name mentions, and work-item relationships. Use that pass to identify likely integrations between repositories and record the evidence in `manifest.json`.
+
 ## Harvest Policy
 
 Extract broadly and preserve provenance. Do not discard a source just because it looks incomplete. If the source lacks explicit docs, generate documentation from available evidence:
@@ -78,6 +82,8 @@ Extract broadly and preserve provenance. Do not discard a source just because it
 - repeated nouns and path names that indicate business domains or integration flows.
 
 Mark generated conclusions as `inferred` in metadata. Use factual language in generated docs: say what was observed and what is inferred from observed artifacts.
+
+Do not present an inventory of repositories, PRs, and work items as complete documentation. If repository content was not read, classify the result as `partial` or `inventory` and ask before continuing with limited coverage.
 
 ## OneBrain Ingestion Shape
 
@@ -92,11 +98,13 @@ The generated memories should use:
 
 When using MCP instead of HTTP, call `onebrain_import_memory_files` against the generated `documents/` folder and pass the same scope plus `source_type=onebrain-knowledge-harvest`.
 
+If `onebrain_import_memory_files` fails because of path mapping or filesystem visibility, read `onebrain-import.jsonl` and call `onebrain_add_memory` once per generated memory. Confirm that inserted memory count equals generated document count except for explicitly recorded errors.
+
 ## Provider Coverage
 
 For GitHub, collect repository metadata, clone URLs, contributors, issues, pull requests, README, local docs from clone, and wiki clone attempts.
 
-For Azure DevOps, collect projects, Git repositories, pull requests, wikis, wiki root pages, WIQL work items, and work item details in batches. In Codex, use `mcp__mcp_azuredevops` first, persist the MCP result payloads as an `azure-devops-mcp-export` JSON file, and preserve that export's contents in `manifest.json`.
+For Azure DevOps, collect projects, Git repositories, pull requests, wikis, wiki root pages, WIQL work items, and work item details in batches. In Codex, use `mcp__mcp_azuredevops` first, persist the MCP result payloads as an `azure-devops-mcp-export` JSON file, and preserve that export's contents in `manifest.json`. Use `get_repository_items` and `get_file_content` for each selected repo, or clone via Git/PAT when available. If neither file reads nor clone are possible, record the repo as partial/failed and ask before doing a superficial harvest.
 
 For Jira Cloud, collect projects and JQL search results. Use active people from assignee, reporter, creator, and status transitions present in the issue payload.
 

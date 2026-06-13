@@ -91,6 +91,10 @@ class HarvestState:
                 "pull_requests": [],
                 "active_people": {},
                 "documents": self.documents,
+                "repository_coverage": [],
+                "coverage_summary": {},
+                "clues": [],
+                "cross_references": [],
                 "errors": [],
             }
         )
@@ -127,6 +131,7 @@ class HarvestState:
         metadata: dict[str, Any],
         memory_type: str = "context",
         tags: list[str] | None = None,
+        source_ref: str | None = None,
     ) -> Path:
         safe_slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", slug.strip().lower()).strip("-")
         relative = Path(provider) / f"{safe_slug or 'document'}.md"
@@ -134,7 +139,7 @@ class HarvestState:
         path.parent.mkdir(parents=True, exist_ok=True)
         body = f"# {title}\n\n{content.strip()}\n"
         path.write_text(body, encoding="utf-8")
-        source_ref = f"onebrain-harvest://{provider}/{safe_slug or self.run_id}"
+        source_ref = source_ref or f"onebrain-harvest://{provider}/{safe_slug or self.run_id}"
         doc = {
             "title": title,
             "provider": provider,
@@ -165,6 +170,128 @@ class HarvestState:
             }
         )
         return path
+
+    def record_repository_coverage(
+        self,
+        *,
+        provider: str,
+        repository: str,
+        status: str,
+        organization: str | None = None,
+        project: str | None = None,
+        files_read: list[str] | None = None,
+        docs_generated: list[str] | None = None,
+        source_ref: str | None = None,
+        errors: list[str] | None = None,
+        inferred_fields: list[str] | None = None,
+        memory_id: str | None = None,
+    ) -> None:
+        self.manifest["repository_coverage"].append(
+            {
+                "provider": provider,
+                "organization": organization,
+                "project": project,
+                "repository": repository,
+                "status": status,
+                "files_read": files_read or [],
+                "docs_generated": docs_generated or [],
+                "memory_id": memory_id,
+                "memory_created": bool(memory_id),
+                "source_ref": source_ref,
+                "errors": errors or [],
+                "inferred_fields": sorted(set(inferred_fields or [])),
+            }
+        )
+
+    def finalize_coverage(self) -> None:
+        coverage = self.manifest.get("repository_coverage", [])
+        counts = {"documented": 0, "partial": 0, "failed": 0}
+        for item in coverage:
+            status = item.get("status")
+            if status in counts:
+                counts[status] += 1
+        memory_created = sum(1 for item in coverage if item.get("memory_created"))
+        total = len(coverage)
+        documentation_complete = total > 0 and counts["documented"] == total
+        ingestion_complete = total > 0 and memory_created == total
+        complete = documentation_complete and ingestion_complete
+        self.manifest["coverage_summary"] = {
+            "total_repositories": total,
+            **counts,
+            "memory_created": memory_created,
+            "documentation_complete": documentation_complete,
+            "ingestion_complete": ingestion_complete,
+            "complete": complete,
+            "classification": "complete" if complete else ("partial" if total else "inventory"),
+        }
+
+    def finalize_cross_references(self) -> None:
+        repository_docs = [
+            document
+            for document in self.documents
+            if document.get("metadata", {}).get("artifact_kind") == "repository"
+        ]
+        repo_entries: list[dict[str, Any]] = []
+        for document in repository_docs:
+            path = self.output / str(document["path"])
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            metadata = document.get("metadata", {})
+            label = _repo_crossref_label(metadata)
+            clues = _extract_clues(content, label)
+            clue_record = {
+                "repository": label,
+                "source_ref": document.get("source_ref"),
+                "document_path": document.get("path"),
+                "clues": clues,
+            }
+            self.manifest["clues"].append(clue_record)
+            repo_entries.append(
+                {"label": label, "document": document, "content": content, "clues": clues}
+            )
+
+        cross_refs: list[dict[str, Any]] = []
+        for source in repo_entries:
+            source_label = source["label"]
+            source_content = source["content"].lower()
+            for target in repo_entries:
+                target_label = target["label"]
+                if source_label == target_label:
+                    continue
+                target_repo = str(target["document"].get("metadata", {}).get("repository") or "")
+                target_terms = {target_label.lower(), target_repo.lower()}
+                target_terms = {term for term in target_terms if term and term != "none"}
+                if any(term in source_content for term in target_terms):
+                    cross_refs.append(
+                        {
+                            "type": "repository-name-reference",
+                            "source_repository": source_label,
+                            "target_repository": target_label,
+                            "evidence": sorted(target_terms),
+                        }
+                    )
+
+        clue_index: dict[tuple[str, str], set[str]] = {}
+        for entry in repo_entries:
+            for clue_type, values in entry["clues"].items():
+                if clue_type in {"repository_names"}:
+                    continue
+                for value in values:
+                    clue_index.setdefault((clue_type, value), set()).add(entry["label"])
+        for (clue_type, value), repositories in sorted(clue_index.items()):
+            if len(repositories) > 1:
+                cross_refs.append(
+                    {
+                        "type": "shared-clue",
+                        "clue_type": clue_type,
+                        "value": value,
+                        "repositories": sorted(repositories),
+                    }
+                )
+
+        self.manifest["cross_references"] = _dedupe_cross_refs(cross_refs)
 
     def flush(self) -> None:
         manifest_path = self.output / "manifest.json"
@@ -224,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
             merged["max_files"] = args.max_files
         _harvest_target(state, merged, config_path.parent)
 
+    state.finalize_coverage()
+    state.finalize_cross_references()
     state.write_document(
         provider="meta",
         slug="harvest-summary",
@@ -241,6 +370,9 @@ def main(argv: list[str] | None = None) -> int:
             api_url=args.onebrain_api_url,
             api_key=args.onebrain_api_key,
         )
+        _apply_ingest_result_to_manifest(state, result)
+        state.finalize_coverage()
+        state.flush()
         (state.output / "ingest-result.json").write_text(
             json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
         )
@@ -296,7 +428,10 @@ def harvest_local_repository(state: HarvestState, target: dict[str, Any], config
         issues=[],
         clone_result={"status": "local", "path": str(repo_path)},
     )
-    state.write_document(
+    source_ref = _repository_source_ref(
+        "local-repository", organization=None, project=None, repository=name
+    )
+    document_path = state.write_document(
         provider="local-repository",
         slug=name,
         title=f"Repository Knowledge: {name}",
@@ -311,6 +446,17 @@ def harvest_local_repository(state: HarvestState, target: dict[str, Any], config
             "scope": {"repository": name},
         },
         tags=["repository", "local"],
+        source_ref=source_ref,
+    )
+    state.record_repository_coverage(
+        provider="local-repository",
+        repository=name,
+        status="documented" if docs else "partial",
+        files_read=[doc["path"] for doc in docs],
+        docs_generated=[_relative_to_output(state, document_path)],
+        source_ref=source_ref,
+        errors=[] if docs else ["No repository files were read."],
+        inferred_fields=["purpose", "stack", "business_flow"],
     )
 
 
@@ -419,7 +565,10 @@ def harvest_github(state: HarvestState, target: dict[str, Any]) -> None:
         state.manifest["issues"].extend(
             _compact_issue("github", f"{owner}/{name}", issue) for issue in issues
         )
-        state.write_document(
+        source_ref = _repository_source_ref(
+            "github", organization=owner, project=None, repository=name
+        )
+        document_path = state.write_document(
             provider="github",
             slug=f"{owner}-{name}",
             title=f"GitHub Repository Knowledge: {owner}/{name}",
@@ -443,6 +592,19 @@ def harvest_github(state: HarvestState, target: dict[str, Any]) -> None:
                 "scope": {"provider": "github", "repository": f"{owner}/{name}"},
             },
             tags=["repository", "github"],
+            source_ref=source_ref,
+        )
+        status, errors = _repository_status_and_errors(docs, readme, clone_result)
+        state.record_repository_coverage(
+            provider="github",
+            organization=owner,
+            repository=name,
+            status=status,
+            files_read=[doc["path"] for doc in docs] + (["README"] if readme else []),
+            docs_generated=[_relative_to_output(state, document_path)],
+            source_ref=source_ref,
+            errors=errors,
+            inferred_fields=["purpose", "stack", "business_flow", "integrations"],
         )
 
 
@@ -519,7 +681,10 @@ def harvest_azure_devops(state: HarvestState, target: dict[str, Any]) -> None:
             state.manifest["pull_requests"].extend(
                 _compact_pull("azure-devops", f"{project}/{repo_name}", pull) for pull in pulls
             )
-            state.write_document(
+            source_ref = _repository_source_ref(
+                "azure-devops", organization=organization, project=project, repository=repo_name
+            )
+            document_path = state.write_document(
                 provider="azure-devops",
                 slug=f"{project}-{repo_name}",
                 title=f"Azure DevOps Repository Knowledge: {project}/{repo_name}",
@@ -548,6 +713,20 @@ def harvest_azure_devops(state: HarvestState, target: dict[str, Any]) -> None:
                     },
                 },
                 tags=["repository", "azure-devops"],
+                source_ref=source_ref,
+            )
+            status, errors = _repository_status_and_errors(docs, "", clone_result)
+            state.record_repository_coverage(
+                provider="azure-devops",
+                organization=organization,
+                project=project,
+                repository=str(repo_name),
+                status=status,
+                files_read=[doc["path"] for doc in docs],
+                docs_generated=[_relative_to_output(state, document_path)],
+                source_ref=source_ref,
+                errors=errors,
+                inferred_fields=["purpose", "stack", "business_flow", "integrations"],
             )
         if target.get("include_wikis", True):
             _harvest_azure_wikis(state, organization, project, headers, max_items)
@@ -576,6 +755,11 @@ def harvest_azure_devops_mcp_export(
         repo_name = str(
             repo.get("name") or repo.get("repository") or repo.get("id") or "repository"
         )
+        docs = _mcp_repository_docs(payload, repo)
+        readme = _select_readme(docs)
+        repo_pulls = [
+            pull for pull in pull_requests if _mcp_repo_label(pull).endswith(f"/{repo_name}")
+        ]
         repo_record = {
             "provider": "azure-devops-mcp",
             "organization": organization or None,
@@ -588,6 +772,60 @@ def harvest_azure_devops_mcp_export(
             "mcp_export": str(export_path),
         }
         state.manifest["repositories"].append(repo_record)
+        source_ref = _repository_source_ref(
+            "azure-devops-mcp",
+            organization=organization or None,
+            project=project or None,
+            repository=repo_name,
+        )
+        document_path = state.write_document(
+            provider="azure-devops-mcp",
+            slug=f"{project}-{repo_name}",
+            title=f"Azure DevOps MCP Repository Knowledge: {project}/{repo_name}",
+            content=_repository_document(
+                provider="azure-devops-mcp",
+                repo=repo_record,
+                readme=readme,
+                docs=docs,
+                contributors=[],
+                pulls=repo_pulls,
+                issues=[],
+                clone_result={"status": "mcp-export", "path": str(export_path)},
+            ),
+            metadata={
+                "artifact_kind": "repository",
+                "provider": "azure-devops-mcp",
+                "organization": organization or None,
+                "project": project,
+                "repository": repo_name,
+                "source_url": repo_record["source_url"],
+                "clone_status": "mcp-export",
+                "inferred": True,
+                "scope": {
+                    "provider": "azure-devops-mcp",
+                    "organization": organization,
+                    "project": project,
+                    "repository": repo_name,
+                },
+            },
+            tags=["repository", "azure-devops", "mcp"],
+            source_ref=source_ref,
+        )
+        status, errors = _repository_status_and_errors(
+            docs, readme, {"status": "mcp-export" if docs else "inventory-only"}
+        )
+        state.record_repository_coverage(
+            provider="azure-devops-mcp",
+            organization=organization or None,
+            project=project,
+            repository=repo_name,
+            status=status,
+            files_read=[doc["path"] for doc in docs],
+            docs_generated=[_relative_to_output(state, document_path)],
+            source_ref=source_ref,
+            errors=errors,
+            inferred_fields=["purpose", "stack", "business_flow", "integrations"],
+        )
 
     for pull in pull_requests:
         author = pull.get("createdBy") or pull.get("user") or pull.get("author") or {}
@@ -907,16 +1145,45 @@ def ingest_memories(path: Path, *, api_url: str, api_key: str | None) -> dict[st
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    result = {"endpoint": endpoint, "created": 0, "failed": []}
+    result = {"endpoint": endpoint, "created": 0, "created_memories": [], "failed": []}
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
+        memory = json.loads(line)
         try:
-            _http_json(endpoint, headers=headers, method="POST", payload=json.loads(line))
+            response = _http_json(endpoint, headers=headers, method="POST", payload=memory)
+            source = memory.get("source") or {}
+            memory_id = None
+            if isinstance(response, dict):
+                memory_id = (
+                    response.get("id") or response.get("memory_id") or response.get("memoryId")
+                )
             result["created"] += 1
+            result["created_memories"].append(
+                {
+                    "line": line_number,
+                    "source_ref": source.get("source_ref"),
+                    "memory_id": memory_id,
+                }
+            )
         except RuntimeError as exc:
             result["failed"].append({"line": line_number, "error": str(exc)[:1000]})
     return result
+
+
+def _apply_ingest_result_to_manifest(state: HarvestState, result: dict[str, Any]) -> None:
+    state.manifest["ingestion"] = result
+    memory_ids = {
+        item.get("source_ref"): item.get("memory_id")
+        for item in result.get("created_memories", [])
+        if item.get("source_ref")
+    }
+    for coverage in state.manifest.get("repository_coverage", []):
+        source_ref = coverage.get("source_ref")
+        if source_ref in memory_ids:
+            coverage["memory_created"] = True
+            if memory_ids[source_ref]:
+                coverage["memory_id"] = memory_ids[source_ref]
 
 
 def _github_repositories(
@@ -1191,6 +1458,27 @@ def _repository_document(
         "## Meaning",
         _repo_meaning(repo, readme, docs),
         "",
+        "## Stack",
+        _stack_signals(repo, docs),
+        "",
+        "## Structure And Main Folders",
+        _structure_signals(docs),
+        "",
+        "## APIs And Services",
+        _api_service_signals(docs),
+        "",
+        "## Pipelines",
+        _pipeline_signals(docs),
+        "",
+        "## Dependencies",
+        _dependency_signals(docs),
+        "",
+        "## Integrations",
+        _integration_signals(docs),
+        "",
+        "## Tests",
+        _test_signals(docs),
+        "",
         "## Communication And Business Flow Signals",
         _flow_signals(docs, pulls, issues),
         "",
@@ -1209,6 +1497,7 @@ def _repository_document(
         lines.append(f"- `{doc['path']}`: {_first_sentence(doc['content'])}")
     if readme:
         lines.extend(["", "## README Extract", _truncate(readme, 5000)])
+    lines.extend(["", "## Gaps", _repository_gaps(docs, clone_result)])
     return "\n".join(lines)
 
 
@@ -1330,10 +1619,23 @@ def _azure_mcp_export_document(
 
 def _summary_document(state: HarvestState) -> str:
     manifest = state.manifest
+    coverage = manifest.get("coverage_summary", {})
     return "\n".join(
         [
             f"Run ID: `{state.run_id}`",
             f"Generated at: `{state.generated_at}`",
+            "",
+            "## Coverage Classification",
+            f"- Classification: `{coverage.get('classification', 'unknown')}`",
+            f"- Complete: `{coverage.get('complete', False)}`",
+            f"- Documentation complete: `{coverage.get('documentation_complete', False)}`",
+            f"- Ingestion complete: `{coverage.get('ingestion_complete', False)}`",
+            f"- Repositories documented: {coverage.get('documented', 0)}",
+            f"- Repositories partial: {coverage.get('partial', 0)}",
+            f"- Repositories failed: {coverage.get('failed', 0)}",
+            f"- Repository memories created: {coverage.get('memory_created', 0)}",
+            f"- Clues extracted: {len(manifest.get('clues', []))}",
+            f"- Cross references: {len(manifest.get('cross_references', []))}",
             "",
             "## Counts",
             f"- Sources: {len(manifest.get('sources', []))}",
@@ -1362,6 +1664,99 @@ def _repo_meaning(repo: dict[str, Any], readme: str, docs: list[dict[str, str]])
     if docs:
         return f"Inferred from documentation/source paths: {_first_sentence(docs[0]['content'])}"
     return "No explicit purpose was found; treat this repository as requiring human review."
+
+
+def _stack_signals(repo: dict[str, Any], docs: list[dict[str, str]]) -> str:
+    signals: list[str] = []
+    if repo.get("language"):
+        signals.append(f"- Observed primary language metadata: `{repo.get('language')}`.")
+    path_blob = "\n".join(doc["path"].lower() for doc in docs)
+    patterns = {
+        "Node/TypeScript": ["package.json", "tsconfig.json", ".tsx", ".ts"],
+        ".NET": [".sln", ".csproj", "program.cs", "startup.cs"],
+        "Python": ["pyproject.toml", "requirements.txt", ".py"],
+        "Docker": ["dockerfile", "docker-compose"],
+        "Terraform": [".tf"],
+    }
+    for name, hints in patterns.items():
+        if any(hint in path_blob for hint in hints):
+            signals.append(f"- Inferred `{name}` from repository files.")
+    return "\n".join(signals) if signals else "- No stack signal was available from read files."
+
+
+def _structure_signals(docs: list[dict[str, str]]) -> str:
+    folders = sorted({doc["path"].split("/", 1)[0] for doc in docs if "/" in doc["path"]})[:20]
+    if not folders:
+        return "- No folder structure was available from read files."
+    return "\n".join(f"- `{folder}/`" for folder in folders)
+
+
+def _api_service_signals(docs: list[dict[str, str]]) -> str:
+    matches = _matching_paths(
+        docs, ("controller", "route", "endpoint", "api", "handler", "service")
+    )
+    return _path_list_or_gap(matches, "No API or service entrypoint was found in read files.")
+
+
+def _pipeline_signals(docs: list[dict[str, str]]) -> str:
+    matches = _matching_paths(
+        docs, ("azure-pipelines", ".github/workflows", "pipeline", "build.yml")
+    )
+    return _path_list_or_gap(matches, "No pipeline file was found in read files.")
+
+
+def _dependency_signals(docs: list[dict[str, str]]) -> str:
+    matches = _matching_paths(
+        docs,
+        ("package.json", "pyproject.toml", "requirements.txt", ".csproj", ".sln", "pom.xml"),
+    )
+    return _path_list_or_gap(matches, "No dependency manifest was found in read files.")
+
+
+def _integration_signals(docs: list[dict[str, str]]) -> str:
+    matches = []
+    keywords = ("http", "queue", "topic", "kafka", "servicebus", "sql", "redis", "postgres", "api")
+    for doc in docs:
+        content = doc["content"].lower()
+        if any(keyword in content for keyword in keywords):
+            matches.append(doc["path"])
+    return _path_list_or_gap(matches[:20], "No integration signal was found in read files.")
+
+
+def _test_signals(docs: list[dict[str, str]]) -> str:
+    matches = _matching_paths(docs, ("test", "spec", "__tests__", ".feature"))
+    return _path_list_or_gap(matches, "No test file or test folder was found in read files.")
+
+
+def _repository_gaps(docs: list[dict[str, str]], clone_result: dict[str, Any]) -> str:
+    gaps: list[str] = []
+    if not docs:
+        gaps.append("- Repository content was not read; this is inventory/partial coverage.")
+    clone_status = clone_result.get("status")
+    if clone_status not in {"cloned", "local", "mcp-export"}:
+        gaps.append(f"- Clone/content status is `{clone_status or 'unknown'}`.")
+    for label, hints in {
+        "README": ("readme",),
+        "dependency manifest": ("package.json", "pyproject.toml", "requirements.txt", ".csproj"),
+        "pipeline": ("pipeline", ".github/workflows", "azure-pipelines"),
+        "tests": ("test", "spec"),
+    }.items():
+        if not _matching_paths(docs, hints):
+            gaps.append(f"- Missing {label} evidence in read files.")
+    return "\n".join(gaps) if gaps else "- No major evidence gaps detected in sampled files."
+
+
+def _matching_paths(docs: list[dict[str, str]], hints: tuple[str, ...]) -> list[str]:
+    matches = []
+    for doc in docs:
+        path = doc["path"].lower()
+        if any(hint in path for hint in hints):
+            matches.append(doc["path"])
+    return matches[:20]
+
+
+def _path_list_or_gap(paths: list[str], gap: str) -> str:
+    return "\n".join(f"- `{path}`" for path in paths) if paths else f"- {gap}"
 
 
 def _flow_signals(
@@ -1518,6 +1913,135 @@ def _compact_work_item(
     }
 
 
+def _repository_source_ref(
+    provider: str,
+    *,
+    organization: str | None,
+    project: str | None,
+    repository: str,
+) -> str:
+    if provider in {"azure-devops", "azure-devops-mcp"}:
+        parts = [
+            "onebrain-harvest://azure-devops",
+            _slug_ref(organization or "unknown-org"),
+            _slug_ref(project or "unknown-project"),
+            "repositories",
+            _slug_ref(repository),
+        ]
+        return "/".join(parts)
+    if provider == "github":
+        return "/".join(
+            [
+                "onebrain-harvest://github",
+                _slug_ref(organization or "unknown-owner"),
+                "repositories",
+                _slug_ref(repository),
+            ]
+        )
+    return f"onebrain-harvest://{provider}/repositories/{_slug_ref(repository)}"
+
+
+def _repo_crossref_label(metadata: dict[str, Any]) -> str:
+    provider = metadata.get("provider") or "unknown"
+    organization = metadata.get("organization")
+    project = metadata.get("project")
+    repository = metadata.get("repository") or "repository"
+    parts = [str(provider)]
+    if organization:
+        parts.append(str(organization))
+    if project:
+        parts.append(str(project))
+    parts.append(str(repository))
+    return "/".join(parts)
+
+
+def _extract_clues(content: str, repository_label: str) -> dict[str, list[str]]:
+    text = content[:120000]
+    lower = text.lower()
+    clues = {
+        "urls": sorted(set(re.findall(r"https?://[^\s)>\]]+", text)))[:50],
+        "environment_variables": sorted(
+            set(
+                re.findall(
+                    r"\b[A-Z][A-Z0-9_]*(?:URL|URI|HOST|TOKEN|KEY|SECRET|QUEUE|TOPIC|DB|DATABASE|CONNECTION)[A-Z0-9_]*\b",
+                    text,
+                )
+            )
+        )[:80],
+        "package_names": sorted(
+            set(re.findall(r'"(@?[\w.-]+/[\w.-]+|@[\w.-]+|[\w.-]+)"\s*:', text))
+        )[:80],
+        "service_terms": sorted(
+            set(
+                match.group(0)
+                for match in re.finditer(
+                    r"\b[\w.-]*(?:service|api|client|worker|consumer|producer|queue|topic|event|gateway)[\w.-]*\b",
+                    lower,
+                )
+                if len(match.group(0)) > 4
+            )
+        )[:80],
+        "repository_names": [repository_label],
+    }
+    return {key: values for key, values in clues.items() if values}
+
+
+def _dedupe_cross_refs(cross_refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in cross_refs:
+        key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _repository_status_and_errors(
+    docs: list[dict[str, str]], readme: str, clone_result: dict[str, Any]
+) -> tuple[str, list[str]]:
+    errors: list[str] = []
+    if docs or readme:
+        return "documented", errors
+    clone_status = str(clone_result.get("status") or "unknown")
+    if clone_status in {"failed", "inventory-only"}:
+        errors.append(
+            "Repository content was not read; output is an inventory/partial "
+            "document, not a complete harvest."
+        )
+        if clone_result.get("errors"):
+            errors.extend(str(error) for error in clone_result.get("errors", [])[:3])
+        return "partial", errors
+    errors.append("No README, docs, source, pipeline, dependency, or config files were read.")
+    return "partial", errors
+
+
+def _mcp_repository_docs(payload: dict[str, Any], repo: dict[str, Any]) -> list[dict[str, str]]:
+    repo_name = str(repo.get("name") or repo.get("repository") or repo.get("id") or "")
+    project = _project_name(repo)
+    candidates = _coerce_items(payload, "repository_files", "files", "contents")
+    docs: list[dict[str, str]] = []
+    for item in candidates:
+        item_repo = item.get("repository") or item.get("repo") or item.get("repositoryName")
+        if isinstance(item_repo, dict):
+            item_repo = item_repo.get("name") or item_repo.get("id")
+        item_project = _project_name(item)
+        if item_repo and str(item_repo) != repo_name:
+            continue
+        if project and item_project and str(item_project) != str(project):
+            continue
+        path = item.get("path") or item.get("filePath") or item.get("name")
+        content = item.get("content") or item.get("text")
+        if path and isinstance(content, str) and content.strip():
+            docs.append({"path": str(path), "content": content[:24000]})
+    return docs
+
+
+def _relative_to_output(state: HarvestState, path: Path) -> str:
+    return str(path.relative_to(state.output)).replace("\\", "/")
+
+
 def _coerce_items(payload: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
     for key in keys:
         value = payload.get(key)
@@ -1649,6 +2173,10 @@ def _chunks(values: list[int], size: int) -> list[list[int]]:
 
 def _sanitize_url(url: str) -> str:
     return re.sub(r"(https?://)[^/@\s]+@", r"\1***@", url)
+
+
+def _slug_ref(value: str) -> str:
+    return urllib.parse.quote(re.sub(r"\s+", "-", str(value).strip()), safe="-_.")
 
 
 def _host_slug(url: str) -> str:

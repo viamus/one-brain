@@ -24,6 +24,7 @@ If subagents are needed and the environment reports that explicit authorization 
 3. Launch subagents for independent read-only collection slices when available and authorized.
 4. Require every subagent to write a bounded artifact to the run output folder.
 5. Merge artifacts in the main agent and run the bundled script or equivalent pack writer once.
+6. Run a cross-reference pass across all slices before declaring coverage complete.
 
 ## Subagent Prompt Contract
 
@@ -37,10 +38,10 @@ Provider: <provider>
 Scope: <org/project/repo/wiki/query>
 Output: <absolute-output-folder>/<slice-id>.json
 
-Collect repositories, wikis, pull requests, issues/work items, active people, source URLs, and concise business-flow evidence. Do not ingest into OneBrain. Do not modify source systems. Return the artifact path and any errors.
+Collect repositories, repository file contents, wikis, pull requests, issues/work items, active people, source URLs, clues, and concise business-flow evidence. For every repository in scope, read content files or record an explicit per-repository block. Extract cross-reference clues such as URLs, package names, env vars, queue/topic names, service/client/API terms, and mentions of other repos. Do not ingest into OneBrain. Do not modify source systems. Return the artifact path and any errors.
 ```
 
-For Azure DevOps in Codex, subagents should prefer `mcp__mcp_azuredevops` tools and write data using the `sample-azure-devops-mcp-export.json` shape.
+For Azure DevOps in Codex, subagents should prefer `mcp__mcp_azuredevops` tools and write data using the `sample-azure-devops-mcp-export.json` shape. Use `get_repository_items` to discover README/docs/manifests/pipelines/source/test files and `get_file_content` to export their contents. Inventory-only slices are not complete.
 
 ## Concurrency Guardrails
 
@@ -59,6 +60,7 @@ The main agent merges by stable keys:
 - Work item or issue: `provider + project/repository + id/key`.
 - Wiki: `provider + project/repository + wiki id/name`.
 - Person: normalized display name, unique name, email, or login.
+- Clue: `clue_type + normalized value`.
 
 Preserve provenance. Keep each subagent artifact path in final metadata when possible.
 
@@ -85,6 +87,8 @@ Use `azure-devops-mcp-export` targets for Azure DevOps slice files. For other pr
 - Launch and monitor subagents.
 - Inspect failed slices and retry only the failed scope.
 - Merge and deduplicate artifacts.
+- Build cross-references from clues and explicit repository mentions.
+- Reject inventory-only slices as complete output.
 - Run validation and smoke checks.
 - Review generated docs before ingestion.
 - Perform OneBrain ingestion only after the pack is reviewed or explicitly approved.
