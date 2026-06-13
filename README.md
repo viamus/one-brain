@@ -4,6 +4,16 @@ OneBrain is a production-oriented memory service for LLM tools, coding agents, a
 
 OneBrain does not use an LLM in its online request path. The service remembers, retrieves, ranks, and explains. The calling LLM, such as Codex, is responsible for deeper reasoning over the context returned by OneBrain.
 
+## Documentation Wiki
+
+The reviewable wiki source lives in [resources/wiki](resources/wiki). Start with
+[resources/wiki/Home.md](resources/wiki/Home.md) for architecture, service operations, graph
+correlation, knowledge harvest, environment variables, and runbooks.
+
+When the GitHub Wiki needs to be refreshed, sync the Markdown files from `resources/wiki` to the
+repository wiki. Keeping the source in Git makes documentation changes part of the same pull request
+workflow as code changes.
+
 ## What OneBrain Does
 
 - Captures durable memories with scope, tags, source, confidence, and entities.

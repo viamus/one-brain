@@ -1,22 +1,45 @@
 {
   "name": "onebrain",
   "version": "0.1.0",
-  "description": "Knowledge harvesting and ingestion workflows for OneBrain.",
+  "description": "Enterprise knowledge harvesting, repository documentation, cross-reference mapping, and OneBrain ingestion workflows.",
   "author": {
     "name": "OneBrain"
   },
+  "homepage": "https://github.com/viamus/one-brain/tree/main/resources/wiki",
+  "repository": "https://github.com/viamus/one-brain",
+  "license": "Apache-2.0",
+  "keywords": [
+    "onebrain",
+    "knowledge-harvest",
+    "enterprise-search",
+    "repository-documentation",
+    "azure-devops",
+    "github",
+    "jira",
+    "mcp",
+    "subagents",
+    "cross-reference"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "OneBrain",
-    "shortDescription": "Harvest enterprise knowledge into OneBrain with parallel agents.",
-    "longDescription": "OneBrain adds skills and tooling for orchestrating explicit parallel agents/subagents across repositories, wikis, Jira, and Azure DevOps into structured knowledge packs that can be ingested by OneBrain.",
+    "shortDescription": "Harvest, document, cross-reference, and ingest enterprise knowledge.",
+    "longDescription": "OneBrain adds skills and tooling for explicit parallel-agent harvests across repositories, wikis, Azure DevOps, GitHub, Jira, and local source trees. It generates repository-level Markdown, coverage manifests, clue maps, cross-repository references, and OneBrain-ready memories with stable source refs.",
     "developerName": "OneBrain",
     "category": "Productivity",
-    "capabilities": ["Knowledge ingestion", "Repository analysis", "Enterprise discovery", "Subagent orchestration"],
+    "capabilities": [
+      "Knowledge ingestion",
+      "Repository documentation",
+      "Enterprise discovery",
+      "Subagent orchestration",
+      "Cross-reference mapping",
+      "Azure DevOps MCP export"
+    ],
+    "brandColor": "#C6501B",
     "defaultPrompt": [
-      "Harvest this repository into a OneBrain knowledge pack using explicit parallel agents/subagents.",
-      "Scan Azure DevOps and Jira into OneBrain with explicit parallel agents/subagents.",
-      "Create repository metadata for OneBrain ingestion using explicit parallel agents/subagents and parallel collection slices."
+      "Harvest these repos into complete OneBrain docs.",
+      "Map repository clues and cross-references.",
+      "Ingest generated docs into OneBrain."
     ]
   }
 }
