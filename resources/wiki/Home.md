@@ -15,8 +15,8 @@ can be reviewed in pull requests and synced to the GitHub Wiki when needed.
   URLs.
 - [Graph And Correlation](Graph-And-Correlation.md): how vector, explicit, and entity links become
   a living graph.
-- [Knowledge Harvest Plugin](Knowledge-Harvest-Plugin.md): Codex plugin, supported providers, and
-  pack outputs.
+- [OneBrain Codex Plugin](Knowledge-Harvest-Plugin.md): consult-first memory workflow, supported
+  providers, and harvest pack outputs.
 - [Repository Harvest Acceptance](Repository-Harvest-Acceptance.md): the criteria that separate
   complete docs from inventory.
 - [Environment And Secrets](Environment-And-Secrets.md): where keys live and how runners should
@@ -51,7 +51,7 @@ OneBrain should become the structured memory layer for enterprise agents:
 |   +-- migrations/
 +-- frontend/web/             # React, TypeScript, Material UI, React Flow
 +-- ops/
-|   +-- plugins/onebrain/     # Codex plugin and knowledge harvest skill
+|   +-- plugins/onebrain/     # Codex plugin, consult-first skill, and harvest skill
 |   +-- scripts/
 |   +-- Dockerfile
 +-- resources/

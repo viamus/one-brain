@@ -1,8 +1,28 @@
-# Knowledge Harvest Plugin
+# OneBrain Codex Plugin
 
-The OneBrain Codex plugin contains the `onebrain-knowledge-harvest` skill and a runner-neutral
-Python pack writer. It exists to turn scattered enterprise systems into reviewable documentation
-and OneBrain-ready memories.
+The OneBrain Codex plugin contains memory-first and harvest skills for agents. It exists to make
+Codex consult durable OneBrain context before acting, then turn scattered enterprise systems into
+reviewable documentation and OneBrain-ready memories.
+
+## Consult First Skill
+
+`onebrain-consult-first` tells Codex to query OneBrain memory, context packs, skills, and graph
+correlations before broad local, web, Azure DevOps, GitHub, Jira, or shell investigation.
+
+The skill prefers:
+
+- `onebrain_get_context` for task-sized context packs;
+- `onebrain_search_memory` for prior decisions, runbooks, facts, and pitfalls;
+- `onebrain_search_skills` for reusable workflows and standards;
+- `onebrain_correlate` or `onebrain_get_graph` for architecture and cross-repository clues.
+
+OneBrain results are treated as remembered context, not unquestioned truth. Current code, current
+service state, external facts, and time-sensitive information still need live verification.
+
+## Knowledge Harvest Skill
+
+`onebrain-knowledge-harvest` provides a runner-neutral Python pack writer. It turns scattered
+enterprise systems into reviewable documentation and OneBrain-ready memories.
 
 ## Providers
 
