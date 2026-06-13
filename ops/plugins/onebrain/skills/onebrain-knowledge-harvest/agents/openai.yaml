@@ -1,0 +1,14 @@
+interface:
+  display_name: "OneBrain Knowledge Harvest"
+  short_description: "Document repos, map clues, cross-reference systems, and ingest into OneBrain."
+  brand_color: "#C6501B"
+  default_prompt: "Use $onebrain-knowledge-harvest with explicit parallel agents/subagents to generate complete repository docs, clues, cross-references, and OneBrain memories."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mcp_azuredevops"
+      description: "Prefer viamus/mcp-azure-devops for Azure DevOps repositories, work items, pull requests, builds, and wikis when available."
+
+policy:
+  allow_implicit_invocation: true

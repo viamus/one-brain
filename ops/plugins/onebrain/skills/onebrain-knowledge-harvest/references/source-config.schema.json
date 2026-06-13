@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OneBrain Knowledge Harvest Source Config",
+  "type": "object",
+  "required": ["targets"],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "description": "Scope copied to every generated OneBrain memory."
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "clone": { "type": "boolean" },
+        "include_wikis": { "type": "boolean" },
+        "max_items": { "type": "integer", "minimum": 1 },
+        "max_files": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/localRepositoryTarget" },
+          { "$ref": "#/$defs/githubTarget" },
+          { "$ref": "#/$defs/azureDevOpsTarget" },
+          { "$ref": "#/$defs/azureDevOpsMcpExportTarget" },
+          { "$ref": "#/$defs/jiraTarget" }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "localRepositoryTarget": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "local-repository" },
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "max_files": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "githubTarget": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "github" },
+        "owner": { "type": "string" },
+        "repos": { "type": "array", "items": { "type": "string" } },
+        "repo_urls": { "type": "array", "items": { "type": "string" } },
+        "api_url": { "type": "string" },
+        "token_env": { "type": "string" },
+        "clone": { "type": "boolean" },
+        "include_wikis": { "type": "boolean" },
+        "allow_token_in_clone_url": { "type": "boolean" },
+        "max_items": { "type": "integer", "minimum": 1 },
+        "max_files": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "azureDevOpsTarget": {
+      "type": "object",
+      "required": ["kind", "organization"],
+      "properties": {
+        "kind": { "const": "azure-devops" },
+        "organization": { "type": "string" },
+        "projects": { "type": "array", "items": { "type": "string" } },
+        "token_env": { "type": "string" },
+        "clone": { "type": "boolean" },
+        "include_wikis": { "type": "boolean" },
+        "wiql": { "type": "string" },
+        "use_mcp": {
+          "type": "boolean",
+          "description": "When true, Codex should prefer mcp__mcp_azuredevops tools and use script REST only as fallback."
+        },
+        "max_items": { "type": "integer", "minimum": 1 },
+        "max_files": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "azureDevOpsMcpExportTarget": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "azure-devops-mcp-export" },
+        "path": {
+          "type": "string",
+          "description": "Path to a JSON file produced from mcp__mcp_azuredevops tool responses."
+        },
+        "name": { "type": "string" },
+        "organization": { "type": "string" },
+        "project": { "type": "string" }
+      }
+    },
+    "jiraTarget": {
+      "type": "object",
+      "required": ["kind", "base_url"],
+      "properties": {
+        "kind": { "const": "jira" },
+        "base_url": { "type": "string" },
+        "email_env": { "type": "string" },
+        "token_env": { "type": "string" },
+        "jql": { "type": "string" },
+        "projects": { "type": "array", "items": { "type": "string" } },
+        "max_items": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

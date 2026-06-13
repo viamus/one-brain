@@ -1,0 +1,20 @@
+{
+  "scope": {
+    "organization": "onebrain",
+    "catalog": "enterprise-knowledge",
+    "source": "knowledge-harvest"
+  },
+  "defaults": {
+    "clone": true,
+    "include_wikis": true,
+    "max_items": 50,
+    "max_files": 80
+  },
+  "targets": [
+    {
+      "kind": "local-repository",
+      "path": "../../../../../..",
+      "name": "one-brain-local"
+    }
+  ]
+}
