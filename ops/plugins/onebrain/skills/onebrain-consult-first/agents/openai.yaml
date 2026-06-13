@@ -1,0 +1,4 @@
+interface:
+  display_name: "OneBrain Consult First"
+  short_description: "Check OneBrain memory before acting."
+  default_prompt: "Use $onebrain-consult-first to check OneBrain context before answering or changing anything."

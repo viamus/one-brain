@@ -1,7 +1,7 @@
 {
   "name": "onebrain",
   "version": "0.1.0",
-  "description": "Enterprise knowledge harvesting, repository documentation, cross-reference mapping, and OneBrain ingestion workflows.",
+  "description": "Enterprise memory-first context lookup, knowledge harvesting, repository documentation, cross-reference mapping, and OneBrain ingestion workflows.",
   "author": {
     "name": "OneBrain"
   },
@@ -11,6 +11,9 @@
   "keywords": [
     "onebrain",
     "knowledge-harvest",
+    "memory-first",
+    "consult-first",
+    "context-pack",
     "enterprise-search",
     "repository-documentation",
     "azure-devops",
@@ -23,11 +26,14 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "OneBrain",
-    "shortDescription": "Harvest, document, cross-reference, and ingest enterprise knowledge.",
-    "longDescription": "OneBrain adds skills and tooling for explicit parallel-agent harvests across repositories, wikis, Azure DevOps, GitHub, Jira, and local source trees. It generates repository-level Markdown, coverage manifests, clue maps, cross-repository references, and OneBrain-ready memories with stable source refs.",
+    "shortDescription": "Consult memory first, then harvest and ingest enterprise knowledge.",
+    "longDescription": "OneBrain adds skills and tooling for memory-first context lookup plus explicit parallel-agent harvests across repositories, wikis, Azure DevOps, GitHub, Jira, and local source trees. It helps agents query prior decisions, runbooks, skills, context packs, and graph correlations before acting, then generate repository-level Markdown, coverage manifests, clue maps, cross-repository references, and OneBrain-ready memories with stable source refs.",
     "developerName": "OneBrain",
     "category": "Productivity",
     "capabilities": [
+      "Memory-first context lookup",
+      "Context pack retrieval",
+      "Skill and runbook recall",
       "Knowledge ingestion",
       "Repository documentation",
       "Enterprise discovery",
@@ -37,6 +43,7 @@
     ],
     "brandColor": "#C6501B",
     "defaultPrompt": [
+      "Consult OneBrain before answering this project question.",
       "Harvest these repos into complete OneBrain docs.",
       "Map repository clues and cross-references.",
       "Ingest generated docs into OneBrain."
